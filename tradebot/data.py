@@ -69,7 +69,7 @@ def _fetch_yahoo(symbol: str, start: str) -> pd.DataFrame:
     return df[["open", "high", "low", "close", "volume", "div_yield"]]
 
 
-def load(symbol: str, start: str = "2005-01-01", refresh: bool = False) -> pd.DataFrame:
+def load(symbol: str, start: str = "1990-01-01", refresh: bool = False) -> pd.DataFrame:
     """銘柄の調整済み日足を返す。data/ にキャッシュする。"""
     CACHE_DIR.mkdir(exist_ok=True)
     path = CACHE_DIR / f"{symbol.replace('^', '_')}.csv"
@@ -82,5 +82,5 @@ def load(symbol: str, start: str = "2005-01-01", refresh: bool = False) -> pd.Da
     return df
 
 
-def load_many(symbols: list[str], start: str = "2005-01-01", refresh: bool = False) -> dict[str, pd.DataFrame]:
+def load_many(symbols: list[str], start: str = "1990-01-01", refresh: bool = False) -> dict[str, pd.DataFrame]:
     return {s: load(s, start, refresh) for s in symbols}

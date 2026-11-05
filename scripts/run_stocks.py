@@ -21,6 +21,8 @@ from tradebot import universe as uv  # noqa: E402
 STOCKS = ROOT / "data" / "stocks"
 
 PERIODS = {
+    "長期 1997-現在": ("1997-01-01", None),
+    "1997-2006（ITバブルと崩壊）": ("1997-01-01", "2006-12-31"),
     "検証期間 2007-2018": ("2007-01-01", "2018-12-31"),
     "未使用期間 2019-現在": ("2019-01-01", None),
 }
@@ -50,15 +52,15 @@ def main() -> None:
     members = uv.member_mask(idx, list(data))
     pct = lambda x: f"{x * 100:.1f}%"  # noqa: E731
 
-    n_all = len(uv.tickers_since("2006-01-01"))
+    n_all = len(uv.tickers_since("1996-01-01"))
     lines = [
         "# S&P500 個別株モメンタムの検証",
         "",
-        f"- 銘柄: 2006年以降に S&P500 に入っていた {n_all} 銘柄のうち、株価が取れた {len(data)} 銘柄",
+        f"- 銘柄: 1996年以降に S&P500 に入っていた {n_all} 銘柄のうち、株価が取れた {len(data)} 銘柄",
         "- 各月末に、その時点で S&P500 に入っている銘柄だけから選ぶ",
         "- 手数料 0.132%（上限 $22）、スリッページ 0.05%、翌日始値で約定。小数株あり、元本 $100,000",
         "- 特定口座: 売買益 20.315%（年ごとに通算、損失は3年繰り越し）、配当は約28%。最終日に全部売った手取り",
-        "- 注意: 上場廃止になった銘柄の多くは株価が取れず抜けているので、成績はやや良く出る",
+        "- 注意: 上場廃止になった銘柄の多くは株価が取れず抜けているので、成績は良く出る。古い期間ほど抜けが多い",
         "",
     ]
     signals = {name: st.stock_momentum(data, bench, members, **kw) for name, kw in VARIANTS.items()}
@@ -83,20 +85,20 @@ def main() -> None:
             print(label, tlabel, "done", flush=True)
         lines += [f"## {label}", "", pd.DataFrame(rows).T.to_markdown(), ""]
 
-    # 持つ銘柄数を変えても結論が変わらないか（全期間・特定口座・毎月入れ替え）
+    # 持つ銘柄数を変えても結論が変わらないか（長期・特定口座・毎月入れ替え）
     rows = {}
     cfg = bt.Config(initial_cash=100_000, fractional=True, max_positions=1, tax=bt.TAXABLE)
-    res = bt.run({"SPY": bench}, bt.hold_signals("SPY", bench), cfg, "2007-01-01")
+    res = bt.run({"SPY": bench}, bt.hold_signals("SPY", bench), cfg, "1997-01-01")
     m = bt.metrics(res.equity)
     rows["SPY 持ち続け"] = {"年率（特定口座）": pct(m["CAGR"]), "最大DD": pct(m["MaxDD"]), "Sharpe": f"{m['Sharpe']:.2f}"}
     for n in (5, 10, 20, 30):
         sig = st.stock_momentum(data, bench, members, top_n=n)
         res = bt.run(data, sig, bt.Config(initial_cash=100_000, fractional=True, max_positions=n, tax=bt.TAXABLE),
-                     "2007-01-01")
+                     "1997-01-01")
         m = bt.metrics(res.equity)
         rows[f"12-1 上位{n}・毎月入れ替え"] = {
             "年率（特定口座）": pct(m["CAGR"]), "最大DD": pct(m["MaxDD"]), "Sharpe": f"{m['Sharpe']:.2f}"}
-    lines += ["## 全期間 2007-現在：持つ銘柄数を変えた場合", "", pd.DataFrame(rows).T.to_markdown(), ""]
+    lines += ["## 長期 1997-現在：持つ銘柄数を変えた場合", "", pd.DataFrame(rows).T.to_markdown(), ""]
 
     out = ROOT / "reports" / "stocks.md"
     out.write_text("\n".join(lines), encoding="utf-8")
