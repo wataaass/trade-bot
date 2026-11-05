@@ -134,3 +134,58 @@ def test_trend_switch_holds_one_side_only():
         assert not both.any()
     s = st.trend_switch({"SPY": down, "IEF": make_df([100] * 300)}, down, risk_off="IEF")
     assert s["SPY"]["exit"].iloc[-1] and s["IEF"]["entry"].iloc[-1]  # 下落後は債券側
+
+
+def _yearly(closes, start="2020-12-28"):
+    return make_df(closes, start=start)
+
+
+def test_capital_gains_taxed_once_per_year():
+    df = _yearly([100, 100, 110, 110, 110, 110])  # 年をまたぐ
+    s = sig(df, entry_days=[0], exit_days=[2])  # 2021年に入ってから +10% で売る
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.TAXABLE)
+    res = bt.run({"A": df}, {"A": s}, cfg)
+    gain = 100.0  # 1000ドルで10株、10ドルずつ値上がり
+    assert res.tax_paid == pytest.approx(gain * 0.20315)
+    assert res.equity.iloc[-1] == pytest.approx(1000 + gain * (1 - 0.20315))
+
+
+def test_loss_carried_forward_offsets_next_year():
+    closes = [100] * 3 + [90] * 3 + [90] * 250 + [99] * 5
+    df = make_df(closes, start="2020-12-24")
+    exit_loss = 4  # 2020年中に損切り（-10）
+    re_entry = 6
+    exit_gain = len(closes) - 3
+    s = sig(df, entry_days=[0, re_entry], exit_days=[exit_loss, exit_gain])
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.TAXABLE)
+    res = bt.run({"A": df}, {"A": s}, cfg)
+    assert [t.exit_date.year for t in res.trades][:1] == [2020]
+    # 2020 年の損失 -100 を 2021 年の利益 +100 で相殺するので税金はゼロ
+    assert res.tax_paid == pytest.approx(0, abs=1e-6)
+
+
+def test_dividend_tax_only_when_held_before_ex_date():
+    df = make_df([100] * 6)
+    df["div_yield"] = [0, 0, 0, 0.01, 0, 0]
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.TAXABLE)
+    held = bt.run({"A": df}, {"A": sig(df, entry_days=[0])}, cfg)
+    assert held.tax_paid == pytest.approx(1000 * 0.01 * bt.TAXABLE.dividend)
+    late = bt.run({"A": df}, {"A": sig(df, entry_days=[2])}, cfg)  # 権利落ち日の始値で買う
+    assert late.tax_paid == 0
+
+
+def test_nisa_has_no_capital_gains_tax():
+    df = _yearly([100, 100, 110, 110, 110, 110])
+    s = sig(df, entry_days=[0], exit_days=[2])
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.NISA)
+    assert bt.run({"A": df}, {"A": s}, cfg).tax_paid == 0
+
+
+def test_dividend_tax_reduces_shares_when_fully_invested():
+    df = make_df([100] * 6)
+    df["div_yield"] = [0, 0, 0, 0.02, 0, 0]
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.NISA)
+    res = bt.run({"A": df}, {"A": sig(df, entry_days=[0])}, cfg)
+    # 配当 2% に 10% の税金 → 資産は 0.2% 減り、現金はマイナスにならない
+    assert res.equity.iloc[-1] == pytest.approx(1000 * (1 - 0.002))
+    assert (res.equity > 0).all()

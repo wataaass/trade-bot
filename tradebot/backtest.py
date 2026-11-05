@@ -26,6 +26,24 @@ class Costs:
 
 
 @dataclass
+class Tax:
+    """日本の課税口座（特定口座）を想定した税金。
+
+    - 売買益: 年ごとに損益を通算し、プラスなら 20.315%。マイナスは翌年から3年繰り越す
+    - 配当: 米国で 10% 源泉徴収されたあと日本で 20.315%（外国税額控除は考えない）
+    税金は翌年最初の営業日に口座の現金から払ったことにする。
+    """
+
+    capital_gains: float = 0.20315
+    dividend: float = 1 - (1 - 0.10) * (1 - 0.20315)
+    loss_carry_years: int = 3
+
+
+TAXABLE = Tax()
+NISA = Tax(capital_gains=0.0, dividend=0.10)  # NISA でも米国の源泉 10% は引かれる
+
+
+@dataclass
 class Config:
     initial_cash: float = 2000.0  # 約30万円
     max_positions: int = 4
@@ -33,6 +51,7 @@ class Config:
     stop_loss: float | None = None  # 例: 0.08 なら建値から 8% 下で損切り
     max_hold_days: int | None = None
     costs: Costs = field(default_factory=Costs)
+    tax: Tax | None = None  # None なら税金を考えない
 
 
 @dataclass
@@ -60,6 +79,7 @@ class Result:
     equity: pd.Series
     trades: list[Trade]
     exposure: pd.Series
+    tax_paid: float = 0.0
 
     def trades_frame(self) -> pd.DataFrame:
         return pd.DataFrame([t.__dict__ | {"ret": t.ret} for t in self.trades])
@@ -87,6 +107,13 @@ def run(
     ent = pd.DataFrame({s: signals[s]["entry"] for s in syms}).reindex(dates).fillna(False).astype(bool)
     ext = pd.DataFrame({s: signals[s]["exit"] for s in syms}).reindex(dates).fillna(False).astype(bool)
     score = pd.DataFrame({s: signals[s]["score"] for s in syms}).reindex(dates)
+    dv = pd.DataFrame(
+        {s: data[s]["div_yield"] if "div_yield" in data[s] else pd.Series(0.0, index=data[s].index) for s in syms}
+    ).reindex(dates).fillna(0.0)
+    tax = cfg.tax
+    realized: dict[int, float] = {}
+    carry: list[list] = []  # [年, 残っている損失]
+    tax_paid = 0.0
 
     costs = cfg.costs
     cash = cfg.initial_cash
@@ -106,11 +133,57 @@ def run(
         notional = fill * t.shares
         fee = costs.commission(notional)
         cash += notional - fee
+        basis = t.entry_price * t.shares + t.fees
+        realized[day.year] = realized.get(day.year, 0.0) + notional - fee - basis
         t.fees += fee
         t.exit_date, t.exit_price, t.reason = day, fill, reason
         trades.append(t)
 
+    def cover_shortfall(day: pd.Timestamp, prices_on: pd.Timestamp) -> None:
+        """税金で現金がマイナスになったら、持ち株を同じ割合で売って埋める。
+
+        配当は調整済み価格の中で再投資されているので、配当の税金は株数を減らして払うのが正しい。
+        売った分の売買益も、その年の損益に入れる。
+        """
+        nonlocal cash
+        if cash >= 0 or not open_pos:
+            return
+        value = sum(t.shares * c.at[prices_on, s_] for s_, t in open_pos.items())
+        if value <= 0:
+            return
+        f = min(-cash / value, 1.0)
+        for s_, t in open_pos.items():
+            proceeds = f * t.shares * c.at[prices_on, s_]
+            basis = f * (t.entry_price * t.shares + t.fees)
+            realized[day.year] = realized.get(day.year, 0.0) + proceeds - basis
+            t.shares *= 1 - f
+            t.fees *= 1 - f
+        cash += f * value
+
+    def settle(year: int) -> None:
+        """その年の売買損益を通算して税金を払う。"""
+        nonlocal cash, tax_paid
+        pnl = realized.pop(year, 0.0)
+        if tax is None:
+            return
+        carry[:] = [c_ for c_ in carry if c_[0] >= year - tax.loss_carry_years]
+        if pnl < 0:
+            carry.append([year, -pnl])
+            return
+        for c_ in carry:
+            used = min(c_[1], pnl)
+            c_[1] -= used
+            pnl -= used
+        carry[:] = [c_ for c_ in carry if c_[1] > 0]
+        due = pnl * tax.capital_gains
+        cash -= due
+        tax_paid += due
+
     for i, day in enumerate(dates):
+        if i > 0 and day.year != dates[i - 1].year:
+            settle(dates[i - 1].year)
+            cover_shortfall(day, dates[i - 1])
+
         # 1) 前日の終値で決めた注文を、当日の始値で執行する
         for sym in list(pending_exit):
             if sym in open_pos and not math.isnan(o.at[day, sym]):
@@ -139,9 +212,14 @@ def run(
                 held_days[sym] = 0
         pending_entry = []
 
-        # 2) 当日の値動きで損切り・保有日数を判定する
+        # 2) 配当の税金、当日の値動きで損切り・保有日数を判定する
         for sym in list(open_pos):
             t = open_pos[sym]
+            if tax is not None and dv.at[day, sym] > 0 and t.entry_date < day:
+                due = dv.at[day, sym] * c.at[dates[i - 1], sym] * t.shares * tax.dividend
+                cash -= due
+                tax_paid += due
+                cover_shortfall(day, dates[i - 1])
             held_days[sym] += 1
             if cfg.stop_loss is not None:
                 stop = t.entry_price * (1 - cfg.stop_loss)
@@ -169,9 +247,16 @@ def run(
     last = dates[-1]
     for sym in list(open_pos):
         close_position(sym, c.at[last, sym], last, "end")
+    settle(last.year)
     equity[-1] = cash
 
-    return Result(pd.Series(equity, index=dates), trades, pd.Series(exposure, index=dates))
+    return Result(pd.Series(equity, index=dates), trades, pd.Series(exposure, index=dates), tax_paid)
+
+
+def hold_signals(sym: str, df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """ずっと持ち続けるシグナル（税金込みのベンチマーク用）。初日の翌日の始値で買う。"""
+    t = pd.Series(True, index=df.index)
+    return {sym: pd.DataFrame({"entry": t, "exit": ~t, "score": 0.0})}
 
 
 def metrics(equity: pd.Series, trades: list[Trade] | None = None, exposure: pd.Series | None = None) -> dict:

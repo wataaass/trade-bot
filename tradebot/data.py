@@ -52,13 +52,21 @@ def _fetch_yahoo(symbol: str, start: str) -> pd.DataFrame:
         index=pd.to_datetime(result["timestamp"], unit="s").normalize(),
     )
     df.index.name = "date"
+    # 配当: 権利落ち日に「配当 ÷ 前日の終値」を入れる（税金の計算に使う）
+    df["div_yield"] = 0.0
+    for ev in (result.get("events") or {}).get("dividends", {}).values():
+        d = pd.to_datetime(ev["date"], unit="s").normalize()
+        if d in df.index:
+            pos = df.index.get_loc(d)
+            if pos > 0 and df["close"].iloc[pos - 1]:
+                df.iloc[pos, df.columns.get_loc("div_yield")] = ev["amount"] / df["close"].iloc[pos - 1]
     df = df.dropna(subset=["open", "close", "adjclose"])
     df = df[~df.index.duplicated(keep="last")]
     # 調整後終値との比率で OHLC をまとめて調整する
     ratio = df["adjclose"] / df["close"]
     for col in ("open", "high", "low", "close"):
         df[col] = df[col] * ratio
-    return df[["open", "high", "low", "close", "volume"]]
+    return df[["open", "high", "low", "close", "volume", "div_yield"]]
 
 
 def load(symbol: str, start: str = "2005-01-01", refresh: bool = False) -> pd.DataFrame:
@@ -66,7 +74,9 @@ def load(symbol: str, start: str = "2005-01-01", refresh: bool = False) -> pd.Da
     CACHE_DIR.mkdir(exist_ok=True)
     path = CACHE_DIR / f"{symbol.replace('^', '_')}.csv"
     if path.exists() and not refresh:
-        return pd.read_csv(path, index_col="date", parse_dates=True)
+        df = pd.read_csv(path, index_col="date", parse_dates=True)
+        if "div_yield" in df:
+            return df
     df = _fetch_yahoo(symbol, start)
     df.to_csv(path)
     return df

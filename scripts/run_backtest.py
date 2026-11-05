@@ -70,6 +70,45 @@ def fmt(m: dict) -> dict:
     return out
 
 
+TAX_CANDIDATES = ["breakout", "trend_daily_cash", "trend_monthly_cash", "trend_monthly_ief"]
+
+
+def tax_section(data: dict) -> list[str]:
+    """税金込みの比較。最終日に全部売って税金を払ったあとの手取りで比べる。"""
+    bench = data[BENCH]
+    pct = lambda x: f"{x * 100:.1f}%"  # noqa: E731
+    lines = [
+        "## 税金込みの比較（最終日に全部売った後の手取り）",
+        "",
+        "- 特定口座: 売買益 20.315%（年ごとに通算、損失は3年繰り越し）、配当は米国10%＋日本20.315%",
+        "- NISA: 売買益は非課税、配当は米国の10%のみ（売ると枠は翌年まで戻らない点は考えていない）",
+        "- 為替コストはどの戦略も「最初にドルに替え、最後に円に戻す」1往復で同じなので省いた",
+        "",
+    ]
+    for label in ("全期間 2007-現在", "未使用期間 2019-現在"):
+        start, end = PERIODS[label]
+        rows = {}
+        names = [f"{BENCH} 持ち続け"] + TAX_CANDIDATES
+        for name in names:
+            row = {}
+            for tlabel, tax in (("税なし", None), ("特定口座", bt.TAXABLE), ("NISA", bt.NISA)):
+                cfg = bt.Config(initial_cash=100_000, fractional=True, max_positions=1, tax=tax)
+                if name in SETUPS:
+                    cfg = replace(cfg, **SETUPS[name])
+                    u = universe_for(name, data)
+                    res = bt.run(u, STRATEGIES[name](u, bench), cfg, start, end)
+                else:
+                    res = bt.run({BENCH: bench}, bt.hold_signals(BENCH, bench), cfg, start, end)
+                m = bt.metrics(res.equity)
+                row[f"年率（{tlabel}）"] = pct(m["CAGR"])
+                if tlabel == "特定口座":
+                    row["最大DD"] = pct(m["MaxDD"])
+                    row["払った税金 / 元本"] = pct(res.tax_paid / cfg.initial_cash)
+            rows[name] = row
+        lines += [f"### {label}", "", pd.DataFrame(rows).T.to_markdown(), ""]
+    return lines
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true")
@@ -113,6 +152,8 @@ def main() -> None:
         res = bt.run(u, fn(u, bench), cfg, start, end)
         rows[name] = fmt(bt.metrics(res.equity, res.trades, res.exposure))
     lines += ["## 資金 $2,000・整数株（2019-現在）", "", pd.DataFrame(rows).T.to_markdown(), ""]
+
+    lines += tax_section(dt.load_many(sorted(set(UNIVERSE) | set(TREND_UNIVERSE))))
 
     out = ROOT / "reports" / "backtest.md"
     out.parent.mkdir(exist_ok=True)
