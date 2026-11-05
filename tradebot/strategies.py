@@ -77,10 +77,7 @@ def momentum_rotation(
     ranked = mom.where(eligible).rank(axis=1, ascending=False)
     chosen = ranked <= top_k
 
-    idx = closes.index
-    month_end = pd.Series(idx.to_period("M"), index=idx)
-    is_rebal = month_end != month_end.shift(-1)
-    is_rebal.iloc[-1] = False  # 最終日は月が終わったか分からない
+    is_rebal = _month_end(closes.index)
 
     out = {}
     for s in closes:
@@ -90,8 +87,47 @@ def momentum_rotation(
     return out
 
 
+def _month_end(idx: pd.DatetimeIndex) -> pd.Series:
+    p = pd.Series(idx.to_period("M"), index=idx)
+    out = p != p.shift(-1)
+    out.iloc[-1] = False  # 最終日は月が終わったか分からない
+    return out
+
+
+def trend_switch(
+    data: dict[str, pd.DataFrame],
+    bench: pd.DataFrame,
+    risk_on: str = "SPY",
+    risk_off: str | None = None,
+    length: int = 200,
+    monthly: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """SPY 中心＋暴落回避。
+
+    risk_on の終値が length 日線より上なら risk_on を持つ。下なら risk_off を持つ
+    （None なら現金）。monthly=True なら判定は月末だけにして、売買の往復を減らす。
+    """
+    c = data[risk_on]["close"]
+    on = c > ind.sma(c, length)
+    check = _month_end(c.index) if monthly else pd.Series(True, index=c.index)
+    on_now = on & check
+    off_now = (~on) & check & ind.sma(c, length).notna()
+    out = {s: _frame(pd.Series(False, index=df.index), pd.Series(False, index=df.index), pd.Series(0.0, index=df.index))
+           for s, df in data.items()}
+    out[risk_on] = _frame(on_now, off_now, pd.Series(1.0, index=c.index))
+    if risk_off:
+        idx = data[risk_off].index
+        out[risk_off] = _frame(off_now.reindex(idx).fillna(False), on_now.reindex(idx).fillna(False),
+                               pd.Series(0.0, index=idx))
+    return out
+
+
 STRATEGIES = {
     "rsi2_pullback": rsi2_pullback,
     "breakout": breakout,
     "momentum_rotation": momentum_rotation,
+    "trend_daily_cash": lambda d, b: trend_switch(d, b, risk_off="BIL"),
+    "trend_daily_ief": lambda d, b: trend_switch(d, b, risk_off="IEF"),
+    "trend_monthly_cash": lambda d, b: trend_switch(d, b, risk_off="BIL", monthly=True),
+    "trend_monthly_ief": lambda d, b: trend_switch(d, b, risk_off="IEF", monthly=True),
 }

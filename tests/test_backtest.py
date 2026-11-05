@@ -84,13 +84,13 @@ def test_signals_do_not_look_ahead():
     """未来のデータを書き換えても、過去のシグナルは変わらない。"""
     rng = np.random.default_rng(1)
     closes = 100 * np.cumprod(1 + rng.normal(0.0005, 0.015, 600))
-    data = {s: make_df(closes * (1 + i * 0.1)) for i, s in enumerate(["A", "B", "C"])}
-    bench = data["A"]
+    data = {s: make_df(closes * (1 + i * 0.1)) for i, s in enumerate(["SPY", "IEF", "BIL"])}
+    bench = data["SPY"]
     cut = 450
     for name, fn in st.STRATEGIES.items():
         full = fn(data, bench)
         trunc_data = {s: d.iloc[:cut] for s, d in data.items()}
-        part = fn(trunc_data, trunc_data["A"])
+        part = fn(trunc_data, trunc_data["SPY"])
         for s in data:
             a = full[s].iloc[: cut - 1]  # 月末判定は翌日の有無を見るので最終日は除く
             b = part[s].iloc[: cut - 1]
@@ -122,3 +122,15 @@ def test_symbol_without_data_yet_is_skipped():
     res = bt.run({"A": a, "B": b}, {"A": sig(a), "B": sb}, cfg)
     assert all(t.entry_date >= b.index[0] for t in res.trades)
     assert not res.equity.isna().any()
+
+
+def test_trend_switch_holds_one_side_only():
+    up = make_df(np.linspace(100, 200, 300))
+    down = make_df(np.r_[np.linspace(100, 200, 250), np.linspace(200, 120, 50)])
+    for spy in (up, down):
+        data = {"SPY": spy, "IEF": make_df([100] * 300)}
+        sigs = st.trend_switch(data, spy, risk_off="IEF")
+        both = sigs["SPY"]["entry"] & sigs["IEF"]["entry"]
+        assert not both.any()
+    s = st.trend_switch({"SPY": down, "IEF": make_df([100] * 300)}, down, risk_off="IEF")
+    assert s["SPY"]["exit"].iloc[-1] and s["IEF"]["entry"].iloc[-1]  # 下落後は債券側
