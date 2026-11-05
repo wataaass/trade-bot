@@ -77,3 +77,30 @@ def test_momentum_ranking_uses_12_1_and_membership():
     }
     r = live.momentum_ranking(data, idx[-1])
     assert r[:2] == ["AAPL", "MSFT"] and "ZZZZ" not in r
+
+
+def test_plan_swing_stop_exit_and_entries():
+    book = {"cash": 1000.0, "positions": {
+        "LOSS": {"qty": 4, "cost": 100.0},   # 終値 89 → 損切り
+        "EXIT": {"qty": 2, "cost": 100.0},   # 20日安値割れ
+        "KEEP": {"qty": 2, "cost": 100.0},
+    }}
+    prices = {"LOSS": 89.0, "EXIT": 105.0, "KEEP": 110.0, "NEW1": 50.0, "BIG": 5000.0, "NEW2": 30.0}
+    orders = live.plan_swing(book, ["BIG", "NEW1", "NEW2", "KEEP"], {"EXIT"}, prices, max_pos=3)
+    sells = {o.symbol: o.reason for o in orders if o.side == "SELL"}
+    assert set(sells) == {"LOSS", "EXIT"} and "損切り" in sells["LOSS"]
+    buys = [o.symbol for o in orders if o.side == "BUY"]
+    assert buys == ["NEW1", "NEW2"]  # BIG は買えない、KEEP は保有中。枠は 3 まで
+    assert orders.index(next(o for o in orders if o.side == "BUY")) > 1  # 売りが先
+
+
+def test_swing_signals_breakout_and_exit():
+    idx = pd.bdate_range("2025-01-01", periods=300)
+    up = np.r_[np.linspace(100, 150, 299), 200.0]           # 最終日に高値更新
+    down = np.r_[np.linspace(100, 150, 290), np.full(10, 90)]  # 最終日には20日安値割れ済み
+    stocks = {"AAPL": pd.DataFrame({"close": up}, index=idx), "MSFT": pd.DataFrame({"close": down}, index=idx)}
+    spy = pd.DataFrame({"close": np.linspace(100, 200, 300)}, index=idx)
+    entries, exits = live.swing_signals(stocks, spy, idx[-1])
+    assert entries == ["AAPL"]
+    entries2, exits2 = live.swing_signals(stocks, spy, idx[-10])
+    assert "MSFT" in exits2  # 急落した日に売りシグナル

@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-05",
+  "price_date": "2026-11-04",
+  "monthly": false,
+  "swing": true,
+  "swing_entries": [
+    "MRNA",
+    "CNC",
+    "VTRS",
+    "HST",
+    "BIIB",
+    "DAL",
+    "LUV",
+    "SWK",
+    "ROST",
+    "AMGN"
+  ],
+  "swing_exits_signal": [],
+  "orders": [
+    {
+      "strategy": "swing",
+      "side": "BUY",
+      "symbol": "MRNA",
+      "qty": 1,
+      "ref_price": 258.3800048828125,
+      "reason": "55日高値を更新"
+    },
+    {
+      "strategy": "swing",
+      "side": "BUY",
+      "symbol": "CNC",
+      "qty": 5,
+      "ref_price": 76.01000213623047,
+      "reason": "55日高値を更新"
+    },
+    {
+      "strategy": "swing",
+      "side": "BUY",
+      "symbol": "VTRS",
+      "qty": 20,
+      "ref_price": 19.219999313354492,
+      "reason": "55日高値を更新"
+    },
+    {
+      "strategy": "swing",
+      "side": "BUY",
+      "symbol": "HST",
+      "qty": 15,
+      "ref_price": 26.110000610351562,
+      "reason": "55日高値を更新"
+    },
+    {
+      "strategy": "swing",
+      "side": "BUY",
+      "symbol": "BIIB",
+      "qty": 1,
+      "ref_price": 254.4600067138672,
+      "reason": "55日高値を更新"
+    }
+  ]
+}

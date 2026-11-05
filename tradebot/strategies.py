@@ -173,3 +173,44 @@ def stock_momentum(
     hold = (rank <= keep_rank) & col(mok)
     exit_ = (~hold) & col(rebal)
     return {s: _frame(entry[s], exit_[s], score[s]) for s in closes}
+
+
+def stock_swing(
+    data: dict[str, pd.DataFrame],
+    bench: pd.DataFrame,
+    members: pd.DataFrame,
+    kind: str = "breakout55",
+    market_filter: bool = True,
+) -> dict[str, pd.DataFrame]:
+    """個別株のスイング（毎日判定、数日〜数週間保有）。S&P500 に入っている銘柄だけ買う。
+
+    kind:
+      breakout55 : 終値が過去55日高値を更新で買い、過去20日安値割れで売り（タートル型）
+      breakout20 : 20日高値更新で買い、10日安値割れで売り（短め）
+      pullback   : 200日線より上で RSI(2) < 10 なら買い、終値が5日線を超えたら売り（Connors 型）
+      mom_pullback : 12-1 モメンタム上位50銘柄に絞った pullback
+    優先順位はどれも 12-1 モメンタムの高い順。
+    """
+    closes = pd.DataFrame({s: df["close"] for s, df in data.items()})
+    members = members.reindex(index=closes.index, columns=closes.columns).fillna(False).astype(bool)
+    ok = members & closes.notna()
+    if market_filter:
+        mok = market_ok(bench).reindex(closes.index).fillna(False).astype(bool)
+        ok = ok & mok.to_numpy()[:, None]
+    mom = closes.shift(21) / closes.shift(252) - 1
+
+    if kind in ("breakout55", "breakout20"):
+        n_in, n_out = (55, 20) if kind == "breakout55" else (20, 10)
+        hi = closes.rolling(n_in).max().shift(1)
+        lo = closes.rolling(n_out).min().shift(1)
+        entry = (closes > hi) & ok
+        exit_ = closes < lo
+    elif kind in ("pullback", "mom_pullback"):
+        r = closes.apply(lambda c: ind.rsi(c, 2))
+        entry = (closes > closes.rolling(200).mean()) & (r < 10) & ok
+        if kind == "mom_pullback":
+            entry &= mom.where(members).rank(axis=1, ascending=False) <= 50
+        exit_ = closes > closes.rolling(5).mean()
+    else:
+        raise ValueError(kind)
+    return {s: _frame(entry[s], exit_[s], mom[s]) for s in closes}

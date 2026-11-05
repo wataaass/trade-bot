@@ -31,6 +31,7 @@ INITIAL_CASH = 2000.0
 BENCH_TRADE = "SPYM"  # 実際に売買する安い S&P500 ETF（シグナルは SPY で計算）
 RISK_OFF = "IEF"
 MOMENTUM_TOP_N = 5
+LIVE_START = "2024-06-01"  # 252日のモメンタムと200日線が計算できる長さ
 BUY_BUFFER = 1.01  # 成行の買いで現金が足りなくならないよう、前日終値の 1% 上で数量を決める
 
 
@@ -55,7 +56,7 @@ def new_ledger(start: str) -> dict:
         "started": start,
         "last_rebalance": None,
         "strategies": {
-            name: {"cash": INITIAL_CASH, "positions": {}} for name in ("momentum", "trend")
+            name: {"cash": INITIAL_CASH, "positions": {}} for name in ("momentum", "trend", "swing")
         },
         # 比較用: 同じ額を SPYM に入れて持ち続けた場合（実際には発注しない）。初回の入れ替えの後に決める
         "benchmark": {"symbol": BENCH_TRADE, "qty": None, "cash": INITIAL_CASH},
@@ -191,7 +192,7 @@ def plan_momentum(book: dict, ranking: list[str], prices: dict[str, float], top_
     return orders
 
 
-def load_live_data(symbols: list[str], start: str = "2023-01-01") -> dict[str, pd.DataFrame]:
+def load_live_data(symbols: list[str], start: str = LIVE_START) -> dict[str, pd.DataFrame]:
     """発注計画用に最新の日足を取り直す（検証用のキャッシュ data/*.csv は触らない）。"""
     from concurrent.futures import ThreadPoolExecutor
 
@@ -209,3 +210,61 @@ def load_live_data(symbols: list[str], start: str = "2023-01-01") -> dict[str, p
 def current_members() -> list[str]:
     df = uv.intervals()
     return sorted(df.loc[df["end"].isna(), "ticker"].unique())
+
+
+# ---------------------------------------------------------------- スイング（毎日）
+
+SWING_MAX_POS = 5
+SWING_STOP = 0.10  # 建値から 10% 下の終値で損切り（翌日に成行で売る）
+
+
+def ensure_swing_book(ledger: dict) -> None:
+    ledger["strategies"].setdefault("swing", {"cash": INITIAL_CASH, "positions": {}})
+    ledger.setdefault("swing_started", None)
+    ledger.setdefault("last_swing", None)
+
+
+def swing_signals(stocks: dict[str, pd.DataFrame], spy: pd.DataFrame, asof: pd.Timestamp
+                  ) -> tuple[list[str], set[str]]:
+    """asof の終値で、(買い候補をモメンタム順に, 売りシグナルの出た銘柄) を返す。検証と同じ関数を使う。"""
+    idx = pd.DatetimeIndex(sorted(set().union(*(d.index for d in stocks.values()))))
+    idx = idx[idx <= asof]
+    members = uv.member_mask(idx, list(stocks))
+    sig = st.stock_swing({s: d.loc[:asof] for s, d in stocks.items()}, spy.loc[:asof], members, kind="breakout55")
+    entries = [(s, f["score"].iloc[-1]) for s, f in sig.items() if len(f) and f.index[-1] == asof
+               and bool(f["entry"].iloc[-1])]
+    entries.sort(key=lambda x: -x[1] if pd.notna(x[1]) else float("inf"))
+    exits = {s for s, f in sig.items() if len(f) and f.index[-1] == asof and bool(f["exit"].iloc[-1])}
+    return [s for s, _ in entries], exits
+
+
+def plan_swing(book: dict, entries: list[str], exits: set[str], prices: dict[str, float],
+               max_pos: int = SWING_MAX_POS) -> list[Order]:
+    orders = []
+    cash = book["cash"]
+    held = dict(book["positions"])
+    for sym, pos in list(held.items()):
+        why = None
+        if sym not in prices:
+            why = "データがない（上場廃止など）"
+        elif prices[sym] <= pos["cost"] * (1 - SWING_STOP):
+            why = f"損切り（建値 {pos['cost']:.2f} の {SWING_STOP:.0%} 下）"
+        elif sym in exits:
+            why = "20日安値を割った"
+        if why:
+            orders.append(Order("swing", "SELL", sym, int(pos["qty"]), prices.get(sym, pos["cost"]), why))
+            cash += pos["qty"] * prices.get(sym, pos["cost"])
+            held.pop(sym)
+    slot = _value(book, {**{s: p["cost"] for s, p in book["positions"].items()}, **prices}) / max_pos
+    for sym in entries:
+        if len(held) >= max_pos or cash <= 0:
+            break
+        if sym in held or sym not in prices:
+            continue
+        qty = math.floor(min(slot, cash) / (prices[sym] * BUY_BUFFER))
+        if qty <= 0:
+            continue
+        orders.append(Order("swing", "BUY", sym, qty, prices[sym], "55日高値を更新"))
+        cash -= qty * prices[sym] * BUY_BUFFER
+        held[sym] = {"qty": qty}
+    return orders
