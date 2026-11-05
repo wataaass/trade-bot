@@ -1,0 +1,12 @@
+[project]
+name = "trade-bot"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["pandas>=2.2", "numpy>=1.26", "requests>=2.31", "tabulate>=0.9"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
