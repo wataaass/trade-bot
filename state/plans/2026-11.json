@@ -1,0 +1,69 @@
+{
+  "month": "2026-11",
+  "created": "2026-11-05",
+  "signal_date": "2026-10-30",
+  "price_date": "2026-11-04",
+  "trend_target": "SPYM",
+  "momentum_top10": [
+    "SNDK",
+    "MRNA",
+    "LITE",
+    "MU",
+    "STX",
+    "DELL",
+    "WDC",
+    "MRVL",
+    "INTC",
+    "HPE"
+  ],
+  "orders": [
+    {
+      "strategy": "trend",
+      "side": "BUY",
+      "symbol": "SPYM",
+      "qty": 21,
+      "ref_price": 90.25,
+      "reason": "SPY が200日線より上"
+    },
+    {
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "MRNA",
+      "qty": 1,
+      "ref_price": 258.3800048828125,
+      "reason": "12-1 モメンタム 2 位"
+    },
+    {
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "DELL",
+      "qty": 1,
+      "ref_price": 372.3599853515625,
+      "reason": "12-1 モメンタム 6 位"
+    },
+    {
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "WDC",
+      "qty": 1,
+      "ref_price": 323.8299865722656,
+      "reason": "12-1 モメンタム 7 位"
+    },
+    {
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "MRVL",
+      "qty": 2,
+      "ref_price": 159.8000030517578,
+      "reason": "12-1 モメンタム 8 位"
+    },
+    {
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "INTC",
+      "qty": 6,
+      "ref_price": 58.27000045776367,
+      "reason": "12-1 モメンタム 9 位"
+    }
+  ]
+}

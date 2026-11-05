@@ -1,0 +1,102 @@
+{
+  "started": "2026-11-05",
+  "last_rebalance": "2026-11",
+  "strategies": {
+    "momentum": {
+      "cash": 566.3952000000002,
+      "positions": {
+        "MRNA": {
+          "qty": 1,
+          "cost": 244.05169999999998
+        },
+        "DELL": {
+          "qty": 1,
+          "cost": 321.7892
+        },
+        "WDC": {
+          "qty": 1,
+          "cost": 269.74559999999997
+        },
+        "MRVL": {
+          "qty": 2,
+          "cost": 138.3724
+        },
+        "INTC": {
+          "qty": 6,
+          "cost": 53.54558333333333
+        }
+      }
+    },
+    "trend": {
+      "cash": 163.85950000000025,
+      "positions": {
+        "SPYM": {
+          "qty": 21,
+          "cost": 87.43526190476189
+        }
+      }
+    }
+  },
+  "benchmark": {
+    "symbol": "SPYM",
+    "qty": 22,
+    "cash": 76.42422720000013,
+    "price": 87.32
+  },
+  "fills": [
+    {
+      "date": "2026-11-05",
+      "strategy": "trend",
+      "side": "BUY",
+      "symbol": "SPYM",
+      "qty": 21,
+      "price": 87.32,
+      "fee": 2.4205
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "MRNA",
+      "qty": 1,
+      "price": 243.73,
+      "fee": 0.3217
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "DELL",
+      "qty": 1,
+      "price": 321.365,
+      "fee": 0.4242
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "WDC",
+      "qty": 1,
+      "price": 269.39,
+      "fee": 0.3556
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "MRVL",
+      "qty": 2,
+      "price": 138.19,
+      "fee": 0.3648
+    },
+    {
+      "date": "2026-11-05",
+      "strategy": "momentum",
+      "side": "BUY",
+      "symbol": "INTC",
+      "qty": 6,
+      "price": 53.475,
+      "fee": 0.4235
+    }
+  ]
+}
