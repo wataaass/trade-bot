@@ -83,6 +83,21 @@ def main() -> None:
             print(label, tlabel, "done", flush=True)
         lines += [f"## {label}", "", pd.DataFrame(rows).T.to_markdown(), ""]
 
+    # 持つ銘柄数を変えても結論が変わらないか（全期間・特定口座・毎月入れ替え）
+    rows = {}
+    cfg = bt.Config(initial_cash=100_000, fractional=True, max_positions=1, tax=bt.TAXABLE)
+    res = bt.run({"SPY": bench}, bt.hold_signals("SPY", bench), cfg, "2007-01-01")
+    m = bt.metrics(res.equity)
+    rows["SPY 持ち続け"] = {"年率（特定口座）": pct(m["CAGR"]), "最大DD": pct(m["MaxDD"]), "Sharpe": f"{m['Sharpe']:.2f}"}
+    for n in (5, 10, 20, 30):
+        sig = st.stock_momentum(data, bench, members, top_n=n)
+        res = bt.run(data, sig, bt.Config(initial_cash=100_000, fractional=True, max_positions=n, tax=bt.TAXABLE),
+                     "2007-01-01")
+        m = bt.metrics(res.equity)
+        rows[f"12-1 上位{n}・毎月入れ替え"] = {
+            "年率（特定口座）": pct(m["CAGR"]), "最大DD": pct(m["MaxDD"]), "Sharpe": f"{m['Sharpe']:.2f}"}
+    lines += ["## 全期間 2007-現在：持つ銘柄数を変えた場合", "", pd.DataFrame(rows).T.to_markdown(), ""]
+
     out = ROOT / "reports" / "stocks.md"
     out.write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
