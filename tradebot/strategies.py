@@ -131,3 +131,45 @@ STRATEGIES = {
     "trend_monthly_cash": lambda d, b: trend_switch(d, b, risk_off="BIL", monthly=True),
     "trend_monthly_ief": lambda d, b: trend_switch(d, b, risk_off="IEF", monthly=True),
 }
+
+
+def stock_momentum(
+    data: dict[str, pd.DataFrame],
+    bench: pd.DataFrame,
+    members: pd.DataFrame,
+    top_n: int = 5,
+    exit_rank: int | None = None,
+    market_filter: bool = False,
+    kind: str = "12-1",
+) -> dict[str, pd.DataFrame]:
+    """個別株のモメンタム（月末に入れ替え）。
+
+    kind="12-1": 直近1か月を除いた過去12か月の値上がり率（Jegadeesh & Titman 型）
+    kind="52wh": 終値 ÷ 過去52週の最高値（George & Hwang 型。入れ替えが少ない）
+    S&P500 にその時点で入っている銘柄だけから上位 top_n を買う。
+    exit_rank を指定すると、順位がそこまで落ちるまで持ち続ける（売買と税金を減らす）。
+    market_filter=True なら、SPY が200日線より下の月末は全部売って現金にする。
+    """
+    closes = pd.DataFrame({s: df["close"] for s, df in data.items()})
+    members = members.reindex(index=closes.index, columns=closes.columns).fillna(False).astype(bool)
+    if kind == "12-1":
+        score = closes.shift(21) / closes.shift(252) - 1
+    elif kind == "52wh":
+        score = closes / closes.rolling(252, min_periods=200).max()
+    else:
+        raise ValueError(kind)
+    score = score.where(members & closes.notna())
+    rank = score.rank(axis=1, ascending=False)
+    rebal = _month_end(closes.index)
+
+    mok = pd.Series(True, index=closes.index)
+    if market_filter:
+        # reindex で NaN が入ると object 型になり ~ が整数のビット反転になるので、bool に戻す
+        mok = market_ok(bench).reindex(closes.index).fillna(False).astype(bool)
+
+    keep_rank = exit_rank or top_n
+    col = lambda s: s.to_numpy(dtype=bool)[:, None]  # noqa: E731
+    entry = (rank <= top_n) & col(rebal & mok)
+    hold = (rank <= keep_rank) & col(mok)
+    exit_ = (~hold) & col(rebal)
+    return {s: _frame(entry[s], exit_[s], score[s]) for s in closes}

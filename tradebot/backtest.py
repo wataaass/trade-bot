@@ -107,6 +107,10 @@ def run(
     ent = pd.DataFrame({s: signals[s]["entry"] for s in syms}).reindex(dates).fillna(False).astype(bool)
     ext = pd.DataFrame({s: signals[s]["exit"] for s in syms}).reindex(dates).fillna(False).astype(bool)
     score = pd.DataFrame({s: signals[s]["score"] for s in syms}).reindex(dates)
+    ent_arr = ent.to_numpy()
+    score_arr = np.nan_to_num(score.to_numpy(dtype=float), nan=-np.inf)
+    sym_arr = np.array(syms, dtype=object)
+    last_valid = {s: data[s]["close"].last_valid_index() for s in syms}
     dv = pd.DataFrame(
         {s: data[s]["div_yield"] if "div_yield" in data[s] else pd.Series(0.0, index=data[s].index) for s in syms}
     ).reindex(dates).fillna(0.0)
@@ -215,6 +219,10 @@ def run(
         # 2) 配当の税金、当日の値動きで損切り・保有日数を判定する
         for sym in list(open_pos):
             t = open_pos[sym]
+            if last_valid[sym] is not None and day > last_valid[sym]:
+                # 上場廃止・買収などでデータが途切れた: 最後の終値で手放したことにする
+                close_position(sym, c.at[day, sym], day, "delisted")
+                continue
             if tax is not None and dv.at[day, sym] > 0 and t.entry_date < day:
                 due = dv.at[day, sym] * c.at[dates[i - 1], sym] * t.shares * tax.dividend
                 cash -= due
@@ -239,9 +247,12 @@ def run(
                 pending_exit.add(sym)
         free = cfg.max_positions - (len(open_pos) - len(pending_exit))
         if free > 0:
-            cands = [s for s in syms if ent.at[day, s] and s not in open_pos]
-            cands.sort(key=lambda s: score.at[day, s] if not math.isnan(score.at[day, s]) else -np.inf, reverse=True)
-            pending_entry = cands[:free]
+            idx = np.flatnonzero(ent_arr[i])
+            if len(idx):
+                # スコアの高い順。同点なら銘柄の並び順（安定ソート）
+                idx = idx[np.argsort(-score_arr[i, idx], kind="stable")]
+                # 買えなかった（整数株に届かない等）ときに次点で埋められるよう、候補は全部渡す
+                pending_entry = [s for s in sym_arr[idx] if s not in open_pos]
 
     # 期間末に残った建玉は最終日の終値で評価して閉じる（成績計算用）
     last = dates[-1]

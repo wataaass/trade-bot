@@ -189,3 +189,30 @@ def test_dividend_tax_reduces_shares_when_fully_invested():
     # 配当 2% に 10% の税金 → 資産は 0.2% 減り、現金はマイナスにならない
     assert res.equity.iloc[-1] == pytest.approx(1000 * (1 - 0.002))
     assert (res.equity > 0).all()
+
+
+def test_position_closed_when_data_ends():
+    a = make_df([10] * 10)
+    b = make_df([20, 20, 20, 25])  # 4日でデータが途切れる
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST)
+    res = bt.run({"A": a, "B": b}, {"A": sig(a), "B": sig(b, entry_days=[0])}, cfg)
+    t = res.trades[0]
+    assert t.reason == "delisted" and t.exit_price == 25
+    assert res.equity.iloc[-1] == pytest.approx(1000 * 25 / 20)
+
+
+def test_stock_momentum_market_filter_keeps_winners():
+    """相場フィルターが常に OK なら、フィルターなしと同じシグナルになる。"""
+    rng = np.random.default_rng(3)
+    idx = pd.bdate_range("2020-01-01", periods=400)
+    data = {s: pd.DataFrame({"close": 100 * np.cumprod(1 + rng.normal(0.0004 * i, 0.01, 400))}, index=idx)
+            for i, s in enumerate("ABCDEF")}
+    bench = make_df(np.linspace(100, 300, 380), start="2019-12-01")  # 祝日のずれを再現するため日付を変える
+    members = pd.DataFrame(True, index=idx, columns=list("ABCDEF"))
+    plain = st.stock_momentum(data, bench, members, top_n=2, exit_rank=4)
+    filt = st.stock_momentum(data, bench, members, top_n=2, exit_rank=4, market_filter=True)
+    later = idx[idx >= bench.index[220]]  # 200日線が計算できる日以降
+    later = later[later <= bench.index[-1]]
+    for s in data:
+        assert (plain[s].loc[later, "exit"] == filt[s].loc[later, "exit"]).all()
+        assert filt[s]["exit"].dtype == bool
