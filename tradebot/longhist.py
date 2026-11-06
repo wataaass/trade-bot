@@ -85,3 +85,18 @@ def market_and_cash() -> tuple[pd.DataFrame, pd.DataFrame]:
     mkt_div = annual / 252
 
     return _frame(mkt_close, mkt_div), _frame(cash_close, rf)
+
+
+def leveraged(mkt: pd.DataFrame, cash: pd.DataFrame, lev: float, spread: float = 0.005,
+              expense: float = 0.009) -> pd.DataFrame:
+    """日々 lev 倍の値動きをするレバレッジ ETF を合成する。
+
+    日次リターン = lev × 株のリターン − (lev − 1) × (短期金利 + spread) − 信託報酬
+    spread は借入の上乗せ金利、expense は信託報酬（いずれも年率）。分配金はないものとする。
+    """
+    r_m = mkt["close"].pct_change().fillna(0)
+    rf = cash["close"].pct_change().fillna(0)
+    r = lev * r_m - (lev - 1) * (rf + spread / 252) - expense / 252
+    close = 100 * (1 + r).cumprod()
+    close = close.clip(lower=1e-9)  # 1日で -100% 以下になったら実質ゼロ
+    return _frame(close, pd.Series(0.0, index=close.index))

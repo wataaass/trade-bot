@@ -104,3 +104,23 @@ def test_swing_signals_breakout_and_exit():
     assert entries == ["AAPL"]
     entries2, exits2 = live.swing_signals(stocks, spy, idx[-10])
     assert "MSFT" in exits2  # 急落した日に売りシグナル
+
+
+def test_ensure_books_added_without_touching_existing():
+    lg = ledger()
+    lg["strategies"]["swing"]["cash"] = 123.0
+    live.ensure_swing_book(lg)
+    assert lg["strategies"]["swing"]["cash"] == 123.0
+    assert lg["strategies"]["lev3"]["cash"] == live.INITIAL_CASH
+    assert lg["strategies"]["swing_aggr"]["positions"] == {}
+
+
+def test_lev3_target_and_plan():
+    idx = pd.bdate_range("2025-01-01", periods=260)
+    up = pd.DataFrame({"close": np.linspace(100, 200, 260)}, index=idx)
+    down = pd.DataFrame({"close": np.r_[np.linspace(100, 200, 200), np.linspace(200, 120, 60)]}, index=idx)
+    assert live.lev3_target(up, idx[-1]) == "UPRO"
+    assert live.lev3_target(down, idx[-1]) == "BIL"
+    book = {"cash": 2000.0, "positions": {}}
+    orders = live.plan_trend(book, "UPRO", {"UPRO": 128.0, "BIL": 91.0}, strategy="lev3", on_symbol="UPRO")
+    assert [(o.strategy, o.side, o.symbol, o.qty) for o in orders] == [("lev3", "BUY", "UPRO", 15)]

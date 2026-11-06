@@ -101,17 +101,20 @@ def trend_switch(
     risk_off: str | None = None,
     length: int = 200,
     monthly: bool = False,
+    signal: str | None = None,
 ) -> dict[str, pd.DataFrame]:
     """SPY 中心＋暴落回避。
 
     risk_on の終値が length 日線より上なら risk_on を持つ。下なら risk_off を持つ
     （None なら現金）。monthly=True なら判定は月末だけにして、売買の往復を減らす。
     """
+    # signal を指定すると、その銘柄の200日線で判断して risk_on を売買する（例: 指数で判断してレバレッジ ETF を売買）
+    sc = data[signal or risk_on]["close"].reindex(data[risk_on].index)
     c = data[risk_on]["close"]
-    on = c > ind.sma(c, length)
+    on = sc > ind.sma(sc, length)
     check = _month_end(c.index) if monthly else pd.Series(True, index=c.index)
     on_now = on & check
-    off_now = (~on) & check & ind.sma(c, length).notna()
+    off_now = (~on) & check & ind.sma(sc, length).notna()
     out = {s: _frame(pd.Series(False, index=df.index), pd.Series(False, index=df.index), pd.Series(0.0, index=df.index))
            for s, df in data.items()}
     out[risk_on] = _frame(on_now, off_now, pd.Series(1.0, index=c.index))
@@ -181,6 +184,7 @@ def stock_swing(
     members: pd.DataFrame,
     kind: str = "breakout55",
     market_filter: bool = True,
+    mom_top: int | None = None,
 ) -> dict[str, pd.DataFrame]:
     """個別株のスイング（毎日判定、数日〜数週間保有）。S&P500 に入っている銘柄だけ買う。
 
@@ -189,6 +193,7 @@ def stock_swing(
       breakout20 : 20日高値更新で買い、10日安値割れで売り（短め）
       pullback   : 200日線より上で RSI(2) < 10 なら買い、終値が5日線を超えたら売り（Connors 型）
       mom_pullback : 12-1 モメンタム上位50銘柄に絞った pullback
+    mom_top を指定すると、breakout の買いを 12-1 モメンタム上位の銘柄に絞る。
     優先順位はどれも 12-1 モメンタムの高い順。
     """
     closes = pd.DataFrame({s: df["close"] for s, df in data.items()})
@@ -204,6 +209,8 @@ def stock_swing(
         hi = closes.rolling(n_in).max().shift(1)
         lo = closes.rolling(n_out).min().shift(1)
         entry = (closes > hi) & ok
+        if mom_top:  # 12-1 モメンタム上位 mom_top 銘柄に絞る（勢いの強い銘柄だけ）
+            entry &= mom.where(members).rank(axis=1, ascending=False) <= mom_top
         exit_ = closes < lo
     elif kind in ("pullback", "mom_pullback"):
         r = closes.apply(lambda c: ind.rsi(c, 2))

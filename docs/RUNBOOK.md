@@ -2,7 +2,10 @@
 
 ペーパー運用の bot を動かす手順。平日のニューヨーク時間 12:13 に起動される。
 
-- スイング（55日高値ブレイクアウト）: 取引日は毎日判断する
+- 毎日判断する戦略（取引日のみ）:
+  - `swing`: スイング（55日高値ブレイクアウト、最大5銘柄）
+  - `swing_aggr`: ガチスイング（モメンタム上位100銘柄の55日高値ブレイクアウト、最大3銘柄）
+  - `lev3`: ガチ増やす（SPY が200日線より上なら UPRO＝S&P500 の3倍、下なら BIL＝短期国債）
 - 月次の2戦略（個別株モメンタム上位5、暴落回避）: 月の最初の取引日だけ入れ替える
 - 祝日や、その日の判断が済んでいる日は、`plan` が「何もしない」と言って終わる
 
@@ -29,7 +32,7 @@
 4. 約定を確かめる: `mcp__moomoo__sim_trade_history_order_list`（`acc_id="1459674"`, `market=100`）
    - `status=4` が約定済み。`avg_fill_price` と `cum_qty` を使う。`status=2` は注文中なので、少し待ってから見直す
    - 約定したものだけ記録する。手数料は本番の想定で `min(数量×価格×0.00132, 22)` を入れる
-   - `python scripts/live.py record --strategy <momentum|trend|swing> --side <BUY|SELL> --symbol <銘柄> --qty <数量> --price <約定価格> --fee <手数料>`
+   - `python scripts/live.py record --strategy <momentum|trend|swing|swing_aggr|lev3> --side <BUY|SELL> --symbol <銘柄> --qty <数量> --price <約定価格> --fee <手数料>`
    - 約定しなかった注文があれば、記録せずに報告する
 5. 締める
    - `python scripts/live.py done`

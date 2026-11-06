@@ -38,7 +38,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
     month = now.strftime("%Y-%m")
 
     print("SPY / SPYM / IEF を取得中…")
-    etf = live.load_live_data(["SPY", live.BENCH_TRADE, live.RISK_OFF], start=live.LIVE_START)
+    etf = live.load_live_data(["SPY", live.BENCH_TRADE, live.RISK_OFF, live.LEV3, live.LEV3_OFF],
+                              start=live.LIVE_START)
     spy = etf["SPY"]
     if spy.index[-1] != now and not args.force:
         print(f"今日（{now.date()}）は米国市場の取引日ではない（最新のデータは {spy.index[-1].date()}）。何もしない")
@@ -61,7 +62,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
             held |= set(book["positions"])
     members = live.current_members()
     print(f"S&P500 の {len(members)} 銘柄と保有銘柄を取得中…（数分かかる）")
-    stocks = live.load_live_data(sorted(set(members) | held - {live.BENCH_TRADE, live.RISK_OFF}),
+    stocks = live.load_live_data(sorted(set(members) | held - set(etf)),
                                  start=live.LIVE_START)
     data = {**stocks, **etf}
     prices = {s: float(df["close"].loc[:last_close].iloc[-1]) for s, df in data.items()
@@ -90,6 +91,15 @@ def cmd_plan(args: argparse.Namespace) -> None:
         plan |= {"swing_entries": entries[:10], "swing_exits_signal": sorted(exits & set(
             ledger["strategies"]["swing"]["positions"]))}
         print(f"[スイング] {last_close.date()} の終値で 55日高値更新 {len(entries)} 銘柄: " + ", ".join(entries[:10]))
+        aggr_entries, aggr_exits = live.swing_signals(stocks, spy, last_close, mom_top=live.AGGR_MOM_TOP)
+        orders += live.plan_swing(ledger["strategies"]["swing_aggr"], aggr_entries, aggr_exits, prices,
+                                  max_pos=live.AGGR_MAX_POS, strategy="swing_aggr")
+        lev_target = live.lev3_target(spy, last_close)
+        orders += live.plan_trend(ledger["strategies"]["lev3"], lev_target, prices, strategy="lev3",
+                                  on_symbol=live.LEV3)
+        plan |= {"swing_aggr_entries": aggr_entries[:10], "lev3_target": lev_target}
+        print(f"[ガチスイング] モメンタム上位{live.AGGR_MOM_TOP}の高値更新: " + ", ".join(aggr_entries[:10]))
+        print(f"[ガチ増やす] 行き先 {lev_target}")
     orders.sort(key=lambda o: o.side != "SELL")  # 売りを先に
     plan["orders"] = [o.to_dict() for o in orders]
 
@@ -130,6 +140,8 @@ def cmd_done(args: argparse.Namespace) -> None:
     if plan.get("swing"):
         ledger["last_swing"] = str(now.date())
         ledger["swing_started"] = ledger.get("swing_started") or str(now.date())
+        for name in live.DAILY_STRATEGIES:
+            ledger["started_at"].setdefault(name, str(now.date()))
         print(f"{now.date()} のスイングの判断を完了にした")
     live.save_ledger(ledger)
 
@@ -148,7 +160,9 @@ def cmd_status(args: argparse.Namespace) -> None:
     b = ledger["benchmark"]
     rows = {"SPYM 持ち続け（比較用）": b["cash"] + b["qty"] * prices[b["symbol"]]}
     names = {"momentum": "個別株モメンタム上位5", "trend": "暴落回避（SPYM⇄IEF）",
-             "swing": "スイング（55日高値ブレイクアウト）"}
+             "swing": "スイング（55日高値ブレイクアウト）",
+             "swing_aggr": "ガチスイング（上位100・3銘柄集中）",
+             "lev3": "ガチ増やす（3倍 S&P500 ⇄ 短期国債）"}
     detail = []
     for key, book in ledger["strategies"].items():
         rows[names[key]] = live._value(book, prices)
@@ -164,7 +178,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         f"- 開始: {ledger['started']}、元手は各 ${live.INITIAL_CASH:,.0f}",
         f"- 評価日: {asof}（終値）。税金は引いていない",
         f"- 最後の入れ替え: 月次 {ledger['last_rebalance']}、スイング {ledger.get('last_swing')}"
-        f"（スイングは {ledger.get('swing_started')} から）",
+        f"（毎日動く戦略の開始日: {ledger.get('started_at')}）",
         "",
         table.to_markdown(),
         "",
@@ -184,7 +198,7 @@ def main() -> None:
     p.add_argument("--force-monthly", action="store_true", help="月初でなくても月次の戦略を計画する")
     p.add_argument("--asof", help="月次シグナルの日付を指定する")
     r = sub.add_parser("record")
-    r.add_argument("--strategy", required=True, choices=["momentum", "trend", "swing"])
+    r.add_argument("--strategy", required=True, choices=["momentum", "trend", "swing", "swing_aggr", "lev3"])
     r.add_argument("--side", required=True, choices=["BUY", "SELL"])
     r.add_argument("--symbol", required=True)
     r.add_argument("--qty", required=True, type=int)

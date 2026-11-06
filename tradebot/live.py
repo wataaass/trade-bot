@@ -148,17 +148,18 @@ def _value(book: dict, prices: dict[str, float]) -> float:
     return book["cash"] + sum(p["qty"] * prices[s] for s, p in book["positions"].items())
 
 
-def plan_trend(book: dict, target: str, prices: dict[str, float]) -> list[Order]:
+def plan_trend(book: dict, target: str, prices: dict[str, float], strategy: str = "trend",
+               on_symbol: str = BENCH_TRADE) -> list[Order]:
     orders = []
     cash = book["cash"]
     for sym, pos in book["positions"].items():
         if sym != target:
-            orders.append(Order("trend", "SELL", sym, int(pos["qty"]), prices[sym], f"切り替え先は {target}"))
+            orders.append(Order(strategy, "SELL", sym, int(pos["qty"]), prices[sym], f"切り替え先は {target}"))
             cash += pos["qty"] * prices[sym]
     qty = math.floor(cash / (prices[target] * BUY_BUFFER))
     if qty > 0:
-        reason = "SPY が200日線より上" if target == BENCH_TRADE else "SPY が200日線より下"
-        orders.append(Order("trend", "BUY", target, qty, prices[target], reason))
+        reason = "SPY が200日線より上" if target == on_symbol else "SPY が200日線より下"
+        orders.append(Order(strategy, "BUY", target, qty, prices[target], reason))
     return orders
 
 
@@ -218,19 +219,26 @@ SWING_MAX_POS = 5
 SWING_STOP = 0.10  # 建値から 10% 下の終値で損切り（翌日に成行で売る）
 
 
+DAILY_STRATEGIES = ("swing", "swing_aggr", "lev3")
+
+
 def ensure_swing_book(ledger: dict) -> None:
-    ledger["strategies"].setdefault("swing", {"cash": INITIAL_CASH, "positions": {}})
+    """毎日動く戦略の帳簿がなければ作る（途中から追加した戦略のため）。"""
+    for name in DAILY_STRATEGIES:
+        ledger["strategies"].setdefault(name, {"cash": INITIAL_CASH, "positions": {}})
+    ledger.setdefault("started_at", {})
     ledger.setdefault("swing_started", None)
     ledger.setdefault("last_swing", None)
 
 
-def swing_signals(stocks: dict[str, pd.DataFrame], spy: pd.DataFrame, asof: pd.Timestamp
-                  ) -> tuple[list[str], set[str]]:
+def swing_signals(stocks: dict[str, pd.DataFrame], spy: pd.DataFrame, asof: pd.Timestamp,
+                  mom_top: int | None = None) -> tuple[list[str], set[str]]:
     """asof の終値で、(買い候補をモメンタム順に, 売りシグナルの出た銘柄) を返す。検証と同じ関数を使う。"""
     idx = pd.DatetimeIndex(sorted(set().union(*(d.index for d in stocks.values()))))
     idx = idx[idx <= asof]
     members = uv.member_mask(idx, list(stocks))
-    sig = st.stock_swing({s: d.loc[:asof] for s, d in stocks.items()}, spy.loc[:asof], members, kind="breakout55")
+    sig = st.stock_swing({s: d.loc[:asof] for s, d in stocks.items()}, spy.loc[:asof], members, kind="breakout55",
+                         mom_top=mom_top)
     entries = [(s, f["score"].iloc[-1]) for s, f in sig.items() if len(f) and f.index[-1] == asof
                and bool(f["entry"].iloc[-1])]
     entries.sort(key=lambda x: -x[1] if pd.notna(x[1]) else float("inf"))
@@ -239,7 +247,7 @@ def swing_signals(stocks: dict[str, pd.DataFrame], spy: pd.DataFrame, asof: pd.T
 
 
 def plan_swing(book: dict, entries: list[str], exits: set[str], prices: dict[str, float],
-               max_pos: int = SWING_MAX_POS) -> list[Order]:
+               max_pos: int = SWING_MAX_POS, strategy: str = "swing") -> list[Order]:
     orders = []
     cash = book["cash"]
     held = dict(book["positions"])
@@ -252,7 +260,7 @@ def plan_swing(book: dict, entries: list[str], exits: set[str], prices: dict[str
         elif sym in exits:
             why = "20日安値を割った"
         if why:
-            orders.append(Order("swing", "SELL", sym, int(pos["qty"]), prices.get(sym, pos["cost"]), why))
+            orders.append(Order(strategy, "SELL", sym, int(pos["qty"]), prices.get(sym, pos["cost"]), why))
             cash += pos["qty"] * prices.get(sym, pos["cost"])
             held.pop(sym)
     slot = _value(book, {**{s: p["cost"] for s, p in book["positions"].items()}, **prices}) / max_pos
@@ -264,7 +272,21 @@ def plan_swing(book: dict, entries: list[str], exits: set[str], prices: dict[str
         qty = math.floor(min(slot, cash) / (prices[sym] * BUY_BUFFER))
         if qty <= 0:
             continue
-        orders.append(Order("swing", "BUY", sym, qty, prices[sym], "55日高値を更新"))
+        orders.append(Order(strategy, "BUY", sym, qty, prices[sym], "55日高値を更新"))
         cash -= qty * prices[sym] * BUY_BUFFER
         held[sym] = {"qty": qty}
     return orders
+
+
+# ---------------------------------------------------------------- ガチ枠（毎日）
+
+LEV3 = "UPRO"  # S&P500 の3倍 ETF
+LEV3_OFF = "BIL"  # 下落時の退避先（1〜3か月の米短期国債）
+AGGR_MOM_TOP = 100  # ガチスイング: 12-1 モメンタム上位100銘柄だけ
+AGGR_MAX_POS = 3
+
+
+def lev3_target(spy: pd.DataFrame, asof: pd.Timestamp) -> str:
+    """SPY の終値が200日線より上なら 3倍 ETF、下なら短期国債。"""
+    c = spy["close"].loc[:asof]
+    return LEV3 if c.iloc[-1] > ind.sma(c, 200).iloc[-1] else LEV3_OFF
