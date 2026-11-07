@@ -119,3 +119,19 @@ def test_every_day_matches_zoo_for_b_prime():
     for d in spy.index[-500:]:
         want = [name[k] for k in ("L3", "L2", "MKT", "CASH") if sig[k]["entry"].loc[d]]
         assert [ho.target_voltarget(close.loc[:d], lo=0.20, hi=0.35)] == want, d
+
+
+def test_plan_switch():
+    prices = {"UPRO": 128.0, "BIL": 91.5, "SSO": 95.0}
+    # 何も持っていない → 目標を買う（現金の1%を残す）
+    assert ho.plan_switch({}, 2000.0, "UPRO", prices) == [{"side": "BUY", "symbol": "UPRO", "qty": 15}]
+    # 目標を持っている → 何もしない
+    assert ho.plan_switch({"UPRO": 15}, 80.0, "UPRO", prices) == []
+    # 乗り換え → 売りが先、売った代金と現金で買う
+    orders = ho.plan_switch({"UPRO": 15}, 80.0, "BIL", prices)
+    assert orders[0] == {"side": "SELL", "symbol": "UPRO", "qty": 15}
+    assert orders[1]["side"] == "BUY" and orders[1]["symbol"] == "BIL"
+    assert orders[1]["qty"] == int((80 + 15 * 128) * 0.99 // 91.5)
+    # B の乗り換え（UPRO→SSO）。0株の銘柄は売らない
+    orders = ho.plan_switch({"UPRO": 10, "BIL": 0}, 5.0, "SSO", prices)
+    assert [o["symbol"] for o in orders] == ["UPRO", "SSO"]

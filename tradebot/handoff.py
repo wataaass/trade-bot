@@ -101,3 +101,28 @@ def closes_from_moomoo(kline_list: list[dict]) -> pd.Series:
     s = pd.Series([float(r["close"]) for r in kline_list], index=idx, name="close")
     s = s[~s.index.duplicated(keep="last")].sort_index()
     return s
+
+
+def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict[str, float],
+                keep_cash: float = 0.01) -> list[dict]:
+    """持つべき銘柄（target）に乗り換えるための注文を作る。
+
+    holdings: この枠で今持っている銘柄と株数（例 {"UPRO": 15}）。cash: この枠の現金（ドル）。
+    prices: 直近の値段（発注前の確認用。成行なので約定値とは少しずれる）。
+    keep_cash: 約定のずれに備えて残す現金の割合（既定 1%）。
+    返り値は [{"side": "SELL"|"BUY", "symbol": ..., "qty": ...}] で、売りが先。
+    target を既に持っていて他に何も持っていなければ、空のリスト（何もしない）。
+    """
+    orders: list[dict] = []
+    proceeds = 0.0
+    for sym, qty in holdings.items():
+        if sym != target and qty > 0:
+            orders.append({"side": "SELL", "symbol": sym, "qty": int(qty)})
+            proceeds += qty * prices[sym]
+    if not orders and holdings.get(target, 0) > 0:
+        return []
+    budget = (cash + proceeds) * (1 - keep_cash)
+    qty = int(budget // prices[target])
+    if qty > 0:
+        orders.append({"side": "BUY", "symbol": target, "qty": qty})
+    return orders
