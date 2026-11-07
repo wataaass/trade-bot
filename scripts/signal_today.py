@@ -54,6 +54,8 @@ def main() -> None:
     print(f"   {describe('SPY', spy)}")
     print(f"B. ボラ連動レバ＋200日線   → {ho.target_voltarget(spy)}")
     print(f"   前月末（{prev.index[-1].date()}）の値動き 年率 {vol * 100:.1f}%（15%未満 UPRO／25%未満 SSO／それ以上 SPYM）")
+    print(f"B′. 境目 20/35%（候補）   → {ho.target_voltarget(spy, lo=0.20, hi=0.35)}")
+    print("   （20%未満 UPRO／35%未満 SSO／それ以上 SPYM）")
     print(f"C. QQQ 3倍＋200日線（実験）→ {ho.target_tqqq(qqq)}")
     print(f"   {describe('QQQ', qqq)}")
 
