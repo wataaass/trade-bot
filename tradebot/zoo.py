@@ -161,6 +161,14 @@ def century_candidates() -> list[Candidate]:
                             params={"lo": lo, "hi": hi},
                             desc=f"B の改良版。200日線より下なら短期国債（毎日）。上なら前月末の値動きが{int(lo*100)}%未満で3倍、"
                                  f"{int(hi*100)}%未満で2倍、それ以上は1倍（月1回選び直し）"))
+    for up in (0.005, 0.01, 0.02):
+        for lev, lname in (("L2", "2倍"), ("L3", "3倍")):
+            cs.append(Candidate(f"{lname} 200日線・戻り+{up * 100:g}%", f"asym-{lev}", "century",
+                                c_sma_asym(200, lev, up), symbols=[lev, "CASH"], params={"up": up},
+                                desc=f"株が200日線を割ったらすぐ短期国債、200日線の{up * 100:g}%上を超えたら{lname}に戻る"))
+        cs.append(Candidate(f"ボラ連動レバ月次＋200日線（15/25%）・戻り+{up * 100:g}%", "voltarget-monthly-asym", "century",
+                            c_voltarget_monthly_lev(200, 0.15, 0.25, up), symbols=["MKT", "L2", "L3", "CASH"],
+                            params={"up": up}, desc=f"B の改良版に、戻りの遊び +{up * 100:g}% を加えたもの"))
     cs += band_candidates("century")
     return cs
 
@@ -349,7 +357,7 @@ def band_candidates(universe: str) -> list[Candidate]:
     return cs
 
 
-def c_voltarget_monthly_lev(sma_n: int = 200, lo: float = 0.15, hi: float = 0.25):
+def c_voltarget_monthly_lev(sma_n: int = 200, lo: float = 0.15, hi: float = 0.25, up: float = 0.0):
     """B の改良版: 200日線で逃げる・戻る判定は毎日、倍率（3倍・2倍・1倍）の選び直しは月1回だけ。
 
     乗り換え（＝売買と税金）を減らすため。
@@ -364,7 +372,9 @@ def c_voltarget_monthly_lev(sma_n: int = 200, lo: float = 0.15, hi: float = 0.25
         # （＝各日の倍率は「前の月の最終営業日の値動き」で決まる。月末当日はまだ前月分を使う）
         lev = lev_daily.where(me).ffill().shift(1)
         sm = ind.sma(m, sma_n)
-        tgt = lev.where(m > sm, "CASH").where(sm.notna() & lev.notna())
+        # up > 0 なら、逃げるのは200日線割れですぐ、戻るのは200日線×(1+up) を超えたとき（非対称の遊び）
+        on = pd.Series(np.where(m > sm * (1 + up), 1.0, np.where(m < sm, 0.0, np.nan)), index=idx).ffill()
+        tgt = lev.where(on == 1, "CASH").where(sm.notna() & lev.notna() & on.notna())
         return targets_to_signals(tgt, pd.Series(True, index=idx), ["MKT", "L2", "L3", "CASH"])
     return make
 
@@ -438,4 +448,19 @@ def c_cape_lev(cape: pd.Series, lo_pct: float = 0.5, hi_pct: float = 0.8, window
         sm = ind.sma(m, sma_n)
         tgt = lev.where(m > sm, "CASH").where(sm.notna() & lev.notna())
         return targets_to_signals(tgt, pd.Series(True, index=idx), ["MKT", "L2", "L3", "CASH"])
+    return make
+
+
+def c_sma_asym(n: int = 200, lev: str = "L3", up: float = 0.01, down: float = 0.0, off: str = "CASH"):
+    """非対称の遊び: 株が n 日線×(1−down) を割ったらすぐ逃げ、n 日線×(1+up) を超えたら戻る。
+
+    逃げるのは遅らせず（急落に弱くならないように）、戻るときだけ慎重にしてダマシの往復を減らす。
+    """
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        sm = ind.sma(m, n)
+        state = pd.Series(np.where(m > sm * (1 + up), 1.0, np.where(m < sm * (1 - down), 0.0, np.nan)),
+                          index=m.index).ffill()
+        tgt = pd.Series(np.where(state == 1, lev, off), index=m.index).where(state.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
     return make

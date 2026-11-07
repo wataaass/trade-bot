@@ -12,6 +12,7 @@ import pandas as pd
 
 SMA_N = 200
 VOL_N = 20
+REENTRY = 0.01  # 戻るのは200日線の1%上を超えたとき（逃げるのは200日線割れですぐ）
 
 
 def _sma_on(close: pd.Series, n: int = SMA_N) -> bool:
@@ -21,14 +22,35 @@ def _sma_on(close: pd.Series, n: int = SMA_N) -> bool:
     return bool(close.iloc[-1] > close.iloc[-n:].mean())
 
 
+def trend_on(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> bool:
+    """200日線の判定（非対称の遊びつき）。
+
+    - 終値が200日移動平均を下回った日 → 「逃げる」状態になる
+    - 終値が200日移動平均×(1+up) を上回った日 → 「持つ」状態になる
+    - その間にいる日は、前の状態を続ける
+    今の状態を、価格の履歴の中で最後にどちらかの条件を満たした日から割り出す。
+    """
+    c = close.dropna()
+    if len(c) < n:
+        raise ValueError(f"{n}日分の終値が必要（{len(c)}日分しかない）")
+    sma = c.rolling(n).mean()
+    on = c > sma * (1 + up)
+    off = c < sma
+    decided = (on | off)[sma.notna()]
+    if not decided.any():
+        raise ValueError("200日線の上下どちらとも決まる日が履歴にない。もっと長い履歴を渡す")
+    last = decided[decided].index[-1]
+    return bool(on.loc[last])
+
+
 def target_lev3(spy_close: pd.Series) -> str:
-    """A. SPY 3倍＋200日線: SPY の終値が200日移動平均より上なら UPRO、そうでなければ BIL。"""
-    return "UPRO" if _sma_on(spy_close) else "BIL"
+    """A. SPY 3倍＋200日線: 持つ状態（trend_on）なら UPRO、逃げる状態なら BIL。"""
+    return "UPRO" if trend_on(spy_close) else "BIL"
 
 
 def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -> str:
     """B. ボラ連動レバ＋200日線（改良版）:
-    1. SPY の終値が200日移動平均以下なら BIL
+    1. 200日線の判定（trend_on、非対称の遊びつき）が「逃げる」なら BIL
     2. そうでなければ、倍率を「前の月の最終営業日」の終値で計った値動きで決める:
        直近20営業日の日次リターンの標準偏差×√252 が 15%未満なら UPRO（3倍）、
        25%未満なら SSO（2倍）、それ以上なら SPYM（1倍）
@@ -36,7 +58,7 @@ def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -
     spy_close の index は日付であること。
     """
     c = spy_close.dropna()
-    if not _sma_on(c):
+    if not trend_on(c):
         return "BIL"
     last = c.index[-1]
     prev = c.loc[c.index.to_period("M") < last.to_period("M")]
@@ -48,7 +70,8 @@ def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -
 
 
 def target_tqqq(qqq_close: pd.Series) -> str:
-    """C. QQQ 3倍＋200日線（実験枠）: QQQ の終値が200日線より上なら TQQQ、そうでなければ BIL。"""
+    """C. QQQ 3倍＋200日線（実験枠）: QQQ の終値が200日線より上なら TQQQ、そうでなければ BIL。
+    （C は遊びなしで検証した型のまま）"""
     return "TQQQ" if _sma_on(qqq_close) else "BIL"
 
 

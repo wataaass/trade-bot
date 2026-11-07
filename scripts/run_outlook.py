@@ -26,8 +26,8 @@ def main() -> None:
     data, bench, _ = rz.load_universe("century")
     variants = {
         "持ち続け（1倍）": (zoo.c_hold("MKT"), ["MKT"]),
-        "A. 3倍＋200日線": (zoo.c_sma(200, "L3"), ["L3", "CASH"]),
-        "B. ボラ連動（改良版）": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25), ["MKT", "L2", "L3", "CASH"]),
+        "A. 3倍＋200日線（戻り+1%）": (zoo.c_sma_asym(200, "L3", 0.01), ["L3", "CASH"]),
+        "B. ボラ連動（改良版・戻り+1%）": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01), ["MKT", "L2", "L3", "CASH"]),
         "2倍＋200日線（参考）": (zoo.c_sma(200, "L2"), ["L2", "CASH"]),
     }
     curves = {}
