@@ -34,4 +34,4 @@ Claude 側の5枠は 11/7 に停止済み。口座に残っている Claude 枠�
 - moomoo の K線（`autype=1`）の SPY の終値は Yahoo と完全に一致した。1回の取得（370本）で判定に足りる。K線の返り値は `handoff.closes_from_moomoo` でそのまま判断関数に渡せる
 - 確定申告をするなら外国税額控除も受ける（持ち続けが年0.2〜0.4ポイント良くなり、A・B との差はその分縮む）
 - 退避先は BIL でも SGOV でもよい（SGOV が年0.1〜0.2ポイント良い）
-- 試してやめたことも含めた記録は `reports/improvements.md`（1〜36）
+- 試してやめたことも含めた記録は `reports/improvements.md`（1〜45、冒頭に目次）
