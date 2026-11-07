@@ -78,3 +78,12 @@ def test_every_day_matches_zoo_without_lookahead():
         assert ho.target_lev3(past) == want_a, d
         want_b = [name[k] for k in ("L3", "L2", "MKT", "CASH") if sig_b[k]["entry"].loc[d]]
         assert [ho.target_voltarget(past)] == want_b, d
+
+
+def test_370_bars_are_enough():
+    """moomoo の1回の取得（最大370本）だけで、全履歴を使った判定と同じになることを確かめる。"""
+    close = dt.load("SPY")["close"]
+    for d in close.index[close.index >= "2000-01-01"][::5]:
+        past = close.loc[:d]
+        assert ho.trend_on(past.iloc[-370:]) == ho.trend_on(past), d
+        assert ho.target_voltarget(past.iloc[-370:]) == ho.target_voltarget(past), d
