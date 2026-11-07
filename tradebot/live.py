@@ -59,7 +59,8 @@ def new_ledger(start: str) -> dict:
             name: {"cash": INITIAL_CASH, "positions": {}} for name in ("momentum", "trend", "swing")
         },
         # 比較用: 同じ額を SPYM に入れて持ち続けた場合（実際には発注しない）。初回の入れ替えの後に決める
-        "benchmark": {"symbol": BENCH_TRADE, "qty": None, "cash": INITIAL_CASH},
+        "benchmark": {"symbol": BENCH_TRADE, "qty": None, "cash": INITIAL_CASH,
+                      "note": "比較用の仮想ポジション。口座では発注しない"},
         "fills": [],
     }
 

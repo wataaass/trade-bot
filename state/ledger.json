@@ -60,13 +60,22 @@
           "cost": 251.9571
         }
       }
+    },
+    "swing_aggr": {
+      "cash": 2000.0,
+      "positions": {}
+    },
+    "lev3": {
+      "cash": 2000.0,
+      "positions": {}
     }
   },
   "benchmark": {
     "symbol": "SPYM",
     "qty": 22,
     "cash": 76.42422720000013,
-    "price": 87.32
+    "price": 87.32,
+    "note": "比較用の仮想ポジション。口座では発注しない"
   },
   "fills": [
     {
@@ -170,5 +179,6 @@
     }
   ],
   "swing_started": "2026-11-05",
-  "last_swing": "2026-11-05"
+  "last_swing": "2026-11-05",
+  "started_at": {}
 }
