@@ -412,3 +412,24 @@ def c_sma_trail(n: int = 200, lev: str = "L3", trail: float = 0.25):
         tgt = pd.Series(out, index=m.index)
         return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, "CASH"])
     return make
+
+
+def c_cape_lev(cape: pd.Series, lo_pct: float = 0.5, hi_pct: float = 0.8, window_years: int = 30, sma_n: int = 200):
+    """割高さでレバレッジを変える＋200日線。
+
+    前月の CAPE が、その時点までの過去 window_years 年の中で下位 lo_pct なら3倍、hi_pct までなら2倍、
+    それより割高なら1倍。株が200日線より下なら短期国債。倍率は月1回だけ選び直す。
+    """
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        idx = m.index
+        n = window_years * 12
+        pct = cape.rolling(n, min_periods=n // 2).apply(lambda w: (w[:-1] < w[-1]).mean(), raw=True)
+        pct = pct.shift(1)  # 前月の値を使う（公表の遅れの代わり）
+        month = idx.to_period("M").to_timestamp()
+        p = pd.Series(pct.reindex(month).to_numpy(), index=idx).ffill()
+        lev = pd.Series(np.where(p < lo_pct, "L3", np.where(p < hi_pct, "L2", "MKT")), index=idx).where(p.notna())
+        sm = ind.sma(m, sma_n)
+        tgt = lev.where(m > sm, "CASH").where(sm.notna() & lev.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=idx), ["MKT", "L2", "L3", "CASH"])
+    return make

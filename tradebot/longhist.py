@@ -139,3 +139,20 @@ def bond10(index: pd.DatetimeIndex) -> pd.DataFrame:
     r_d = r_d.where(~splice, ief_r).fillna(0)
     close = 100 * (1 + r_d).cumprod()
     return _frame(close, pd.Series(0.0, index=index))
+
+
+def shiller_cape() -> pd.Series:
+    """CAPE（景気循環調整後 PER、月次）。index は月初。データが公表されるまでの遅れは考えない。"""
+    path = CACHE / "shiller_cape.csv"
+    if not path.exists():
+        r = requests.get(SHILLER_URL, headers=_HEADERS, timeout=60)
+        r.raise_for_status()
+        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7)
+        x = x[pd.to_numeric(x["Date"], errors="coerce").notna()]
+        x = x[pd.to_numeric(x["CAPE"], errors="coerce").notna()]
+        d = x["Date"].astype(float)
+        year = d.astype(int)
+        month = ((d - year) * 100).round().astype(int)
+        idx = pd.to_datetime(dict(year=year, month=month, day=1))
+        pd.Series(x["CAPE"].astype(float).values, index=idx, name="cape").to_csv(path)
+    return pd.read_csv(path, index_col=0, parse_dates=True)["cape"]
