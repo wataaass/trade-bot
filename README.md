@@ -2,7 +2,14 @@
 
 moomoo 証券で動かすスイングトレード bot。検証 → ペーパー運用 → 少額の本番、の順に進める。
 
-## いまの段階: 検証
+## いまの段階: 厳選した bot を Muse に引き継ぎ
+
+- 仕様書: `docs/HANDOFF_MUSE.md`（160候補から採用2・実験枠2）
+- 売買判断の参照実装: `tradebot/handoff.py`
+- 全候補の評価: `reports/zoo.md`（`python scripts/run_zoo.py` で再現）
+- Claude 側のペーパー bot（`scripts/live.py`）は 2026-11-07 に停止
+
+## 検証の仕組み
 
 ```bash
 pip install -e ".[dev]"
