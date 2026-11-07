@@ -16,6 +16,7 @@ import pandas as pd  # noqa: E402
 
 from scripts import run_zoo as rz  # noqa: E402
 from tradebot import backtest as bt  # noqa: E402
+from tradebot import weights as wt  # noqa: E402
 from tradebot import zoo  # noqa: E402
 
 YEARS = 10
@@ -26,8 +27,8 @@ def main() -> None:
     variants = {
         "持ち続け（1倍）": (zoo.c_hold("MKT"), ["MKT"]),
         "A. 3倍＋200日線（戻り+1%）": (zoo.c_sma_asym(200, "L3", 0.01), ["L3", "CASH"]),
-        "B. ボラ連動（改良版・戻り+1%）": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01), ["MKT", "L2", "L3", "CASH"]),
-        "B′. ボラ連動 20/35%（候補）": (zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01), ["MKT", "L2", "L3", "CASH"]),
+        "B 旧（3段階、SSO・SPYM に乗り換え）": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01), ["MKT", "L2", "L3", "CASH"]),
+        "B′ 旧（3段階、20/35%）": (zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01), ["MKT", "L2", "L3", "CASH"]),
         "2倍＋200日線（参考）": (zoo.c_sma(200, "L2"), ["L2", "CASH"]),
     }
     curves = {}
@@ -36,6 +37,12 @@ def main() -> None:
         res = bt.run({s: data[s] for s in syms}, sig, bt.Config(initial_cash=1.0, fractional=True, max_positions=1),
                      "1927-06-01")
         curves[name] = res.equity
+    # B・B′ の新しい持ち方（UPRO と BIL の比率を連続的に、改良49・50）
+    for name, k in (("B 連続（15%）", 0.15), ("B′ 連続（20%）", 0.20)):
+        w = zoo.voltarget_share(data["MKT"]["close"], k, 0.1)
+        res = wt.run_weights(data, pd.DataFrame({"L3": w, "CASH": 1 - w}),
+                             bt.Config(initial_cash=1.0, fractional=True), "1927-06-01")
+        curves[name] = res.equity
     eq = pd.DataFrame(curves)
     n = 252 * YEARS
     roll = (eq.shift(-n) / eq) ** (1 / YEARS) - 1
@@ -43,7 +50,7 @@ def main() -> None:
     hold = roll["持ち続け（1倍）"]
     pct = lambda x: f"{x * 100:.1f}%"  # noqa: E731
     rows = {}
-    for name in variants:
+    for name in curves:
         r = roll[name]
         rows[name] = {
             "悪い5%": pct(r.quantile(0.05)),
