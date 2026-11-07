@@ -31,12 +31,15 @@ class Tax:
 
     - 売買益: 年ごとに損益を通算し、プラスなら 20.315%。マイナスは翌年から3年繰り越す
     - 配当: 米国で 10% 源泉徴収されたあと日本で 20.315%（外国税額控除は考えない）
-    税金は翌年最初の営業日に口座の現金から払ったことにする。
+    税金は翌年最初の営業日に口座の現金から払ったことにする（withhold=True なら、源泉徴収ありの特定口座と同じく売るたびに引く）。
     """
 
     capital_gains: float = 0.20315
     dividend: float = 1 - (1 - 0.10) * (1 - 0.20315)
     loss_carry_years: int = 3
+    # 源泉徴収ありの特定口座: 売るたびに、その年の通算の利益に応じて税金を引く（損が出れば戻す）。
+    # 前年までの損失の繰り越しは口座の中では使えないので、年明けの精算（確定申告）で戻す
+    withhold: bool = False
 
 
 TAXABLE = Tax()
@@ -117,6 +120,7 @@ def run(
     ).reindex(dates).fillna(0.0)
     tax = cfg.tax
     realized: dict[int, float] = {}
+    withheld: dict[int, float] = {}
     carry: list[list] = []  # [年, 残っている損失]
     tax_paid = 0.0
 
@@ -140,6 +144,7 @@ def run(
         cash += notional - fee
         basis = t.entry_price * t.shares + t.fees
         realized[day.year] = realized.get(day.year, 0.0) + notional - fee - basis
+        withhold(day.year)
         t.fees += fee
         t.exit_date, t.exit_price, t.reason = day, fill, reason
         trades.append(t)
@@ -164,13 +169,28 @@ def run(
             t.shares *= 1 - f
             t.fees *= 1 - f
         cash += f * value
+        withhold(day.year)
+
+    def withhold(year: int) -> None:
+        """源泉徴収: その年の通算の利益に対する税金と、すでに引いた額との差を、今の現金から引く（戻す）。"""
+        nonlocal cash, tax_paid
+        if tax is None or not tax.withhold:
+            return
+        target = max(0.0, realized.get(year, 0.0)) * tax.capital_gains
+        delta = target - withheld.get(year, 0.0)
+        cash -= delta
+        tax_paid += delta
+        withheld[year] = target
 
     def settle(year: int) -> None:
-        """その年の売買損益を通算して税金を払う。"""
+        """その年の売買損益を通算して税金を払う（源泉徴収した分は、いったん戻してから精算する）。"""
         nonlocal cash, tax_paid
         pnl = realized.pop(year, 0.0)
         if tax is None:
             return
+        back = withheld.pop(year, 0.0)
+        cash += back
+        tax_paid -= back
         carry[:] = [c_ for c_ in carry if c_[0] >= year - tax.loss_carry_years]
         if pnl < 0:
             carry.append([year, -pnl])
@@ -249,6 +269,7 @@ def run(
                 buy_px = px * (1 + costs.slippage)
                 fee_b = costs.commission(buy_px * t.shares)
                 realized[day.year] = realized.get(day.year, 0.0) + sell - fee_s - (t.entry_price * t.shares + t.fees)
+                withhold(day.year)
                 cash -= (buy_px * t.shares + fee_b) - (sell - fee_s)
                 t.entry_price, t.fees = buy_px, fee_b
 

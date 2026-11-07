@@ -243,3 +243,28 @@ def test_harvest_offsets_same_year_gain():
     plain = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, bt.Config(**base))
     harv = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, bt.Config(**base, harvest=True))
     assert harv.tax_paid < plain.tax_paid
+
+
+def test_withholding_moves_tax_earlier_but_same_total():
+    # 2020年に1回だけ +10% で売り、その後は現金のまま年を越す
+    df = make_df([100, 100, 110, 110, 110, 110, 110, 110], start="2020-12-21")
+    s = sig(df, entry_days=[0], exit_days=[1])
+    base = dict(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST)
+    yearly = bt.run({"A": df}, {"A": s}, bt.Config(**base, tax=bt.TAXABLE))
+    wh = bt.run({"A": df}, {"A": s}, bt.Config(**base, tax=bt.Tax(withhold=True)))
+    assert wh.tax_paid == pytest.approx(yearly.tax_paid) == pytest.approx(100 * 0.20315)
+    assert wh.equity.iloc[-1] == pytest.approx(yearly.equity.iloc[-1])
+    sold = yearly.trades[0].exit_date
+    assert wh.equity.loc[sold] == pytest.approx(yearly.equity.loc[sold] - 100 * 0.20315)  # 売った日に引かれる
+
+
+def test_withholding_refunds_when_loss_follows():
+    # 同じ年に +100 で売った後、-50 で売る → 通算 +50 の分だけ引かれている
+    a = make_df([100, 100, 110, 110, 110, 110, 110, 110], start="2020-12-14")
+    b = make_df([100, 100, 100, 100, 90, 90, 90, 90], start="2020-12-14")
+    sa = sig(a, entry_days=[0], exit_days=[1])
+    sb = sig(b, entry_days=[0], exit_days=[3])
+    cfg = bt.Config(initial_cash=2000, max_positions=2, fractional=True, costs=NO_COST, tax=bt.Tax(withhold=True))
+    res = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, cfg)
+    realized = sum(t.exit_price * t.shares - t.entry_price * t.shares for t in res.trades)
+    assert res.tax_paid == pytest.approx(max(0.0, realized) * 0.20315)
