@@ -126,3 +126,18 @@ def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict
     if qty > 0:
         orders.append({"side": "BUY", "symbol": target, "qty": qty})
     return orders
+
+
+def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> tuple[str, float]:
+    """次の営業日の終値がいくらなら、200日線の判定（非対称の遊びつき）が切り替わるかを返す。
+
+    返り値: ("exit", 価格) … 今は「持つ」。次の終値がこの価格を下回ると「逃げる」
+            ("reentry", 価格) … 今は「逃げる」。次の終値がこの価格を上回ると「持つ」
+    次の200日線は (直近 n−1 日の合計 + 次の終値) / n なので、そこから逆算する。
+    """
+    c = close.dropna()
+    s = c.iloc[-(n - 1):].sum()
+    if trend_on(c, n, up):
+        return "exit", s / (n - 1)
+    k = 1 + up
+    return "reentry", k * s / (n - k)

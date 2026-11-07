@@ -135,3 +135,21 @@ def test_plan_switch():
     # B の乗り換え（UPRO→SSO）。0株の銘柄は売らない
     orders = ho.plan_switch({"UPRO": 10, "BIL": 0}, 5.0, "SSO", prices)
     assert [o["symbol"] for o in orders] == ["UPRO", "SSO"]
+
+
+def test_switch_threshold_is_exact():
+    close = load_or_skip("SPY")["close"].iloc[:-1]
+    nxt = close.index[-1] + pd.Timedelta(days=1)
+    kind, p = ho.switch_threshold(close)
+    before = ho.trend_on(close)
+    for q, flips in ((p * 1.0001, kind == "reentry"), (p * 0.9999, kind == "exit")):
+        after = ho.trend_on(pd.concat([close, pd.Series([q], index=[nxt])]))
+        assert (after != before) == flips, (kind, q)
+    # 逃げている状態でも確かめる（下落の後）
+    down = pd.Series(np.r_[np.linspace(100, 150, 250), np.linspace(150, 120, 30)],
+                     index=pd.bdate_range("2024-01-01", periods=280))
+    kind, p = ho.switch_threshold(down)
+    assert kind == "reentry"
+    nxt = down.index[-1] + pd.Timedelta(days=1)
+    assert ho.trend_on(pd.concat([down, pd.Series([p * 1.0001], index=[nxt])]))
+    assert not ho.trend_on(pd.concat([down, pd.Series([p * 0.9999], index=[nxt])]))

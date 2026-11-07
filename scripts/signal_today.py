@@ -36,6 +36,15 @@ def describe(name: str, close: pd.Series) -> str:
     return f"{name} 終値 {close.iloc[-1]:.2f}、200日線 {sma:.2f}（{gap * 100:+.1f}%）"
 
 
+def distance_to_switch(close: pd.Series) -> str:
+    """A・B の判定が、次の営業日の終値がいくらなら切り替わるか（handoff.switch_threshold）。"""
+    kind, p = ho.switch_threshold(close)
+    last = close.iloc[-1]
+    if kind == "exit":
+        return f"今は「持つ」。次の営業日の SPY の終値が {p:.2f} を下回る（今より {(1 - p / last) * 100:.1f}% 下）と BIL に逃げる"
+    return f"今は「逃げる」。次の営業日の SPY の終値が {p:.2f} を上回る（今より {(p / last - 1) * 100:.1f}% 上）と戻る"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--momentum", action="store_true")
@@ -52,6 +61,7 @@ def main() -> None:
     print()
     print(f"A. SPY 3倍＋200日線        → {ho.target_lev3(spy)}")
     print(f"   {describe('SPY', spy)}")
+    print(f"   {distance_to_switch(spy)}")
     print(f"B. ボラ連動レバ＋200日線   → {ho.target_voltarget(spy)}")
     print(f"   前月末（{prev.index[-1].date()}）の値動き 年率 {vol * 100:.1f}%（15%未満 UPRO／25%未満 SSO／それ以上 SPYM）")
     print(f"B′. 境目 20/35%（候補）   → {ho.target_voltarget(spy, lo=0.20, hi=0.35)}")
