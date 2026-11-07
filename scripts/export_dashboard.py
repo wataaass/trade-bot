@@ -131,6 +131,28 @@ def main(out: Path) -> None:
             r[key] = round(bt.metrics(run(DD, make(DD, x), syms, "1997-06-01", None).equity)["CAGR"], 4)
         rows.append(r)
     pd.DataFrame(rows).to_csv(out / "countries.csv", index=False)
+    # 約定のタイミング（実物の UPRO・SSO・BIL・SPY、2010〜2026）
+    real = {"MKT": dt.load("SPY"), "L2": dt.load("SSO"), "L3": dt.load("UPRO"), "CASH": dt.load("BIL")}
+
+    def next_close(df):
+        d = df.copy()
+        d["open"] = df["close"]
+        d["low"] = df[["low", "close"]].min(axis=1)
+        return d
+
+    def same_close(df):
+        d = df.copy()
+        d["open"] = df["close"].shift(1)
+        d["low"] = d[["low", "open"]].min(axis=1)
+        return d.dropna(subset=["open"])
+
+    rows = []
+    for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A", A(), SA), ("B", B(), SB)):
+        sig = make(real, None)
+        for label, tf in (("当日の終値", same_close), ("翌日の始値", lambda d: d), ("翌日の終値", next_close)):
+            res = run({k: tf(real[k]) for k in syms}, sig, syms, "2010-01-01", None)
+            rows.append({"strategy": name, "timing": label, "cagr": round(bt.metrics(res.equity)["CAGR"], 4)})
+    pd.DataFrame(rows).to_csv(out / "timing.csv", index=False)
     print("書き出した:", ", ".join(sorted(p.name for p in out.glob("*.csv"))))
 
 
