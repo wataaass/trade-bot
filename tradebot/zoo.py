@@ -165,6 +165,12 @@ def century_candidates() -> list[Candidate]:
             cs.append(Candidate(f"{lname} 200日線・戻り+{up * 100:g}%", f"asym-{lev}", "century",
                                 c_sma_asym(200, lev, up), symbols=[lev, "CASH"], params={"up": up},
                                 desc=f"株が200日線を割ったらすぐ短期国債、200日線の{up * 100:g}%上を超えたら{lname}に戻る"))
+        for lo, hi in ((0.12, 0.20), (0.18, 0.30), (0.20, 0.35)):
+            if up != 0.01:
+                continue
+            cs.append(Candidate(f"ボラ連動レバ月次＋200日線（{int(lo*100)}/{int(hi*100)}%）・戻り+1%", "voltarget-monthly-asym-dial",
+                                "century", c_voltarget_monthly_lev(200, lo, hi, up), symbols=["MKT", "L2", "L3", "CASH"],
+                                params={"lo": lo, "hi": hi}, desc=f"B の境目を {int(lo*100)}/{int(hi*100)}% にしたもの（戻り+1%）"))
         cs.append(Candidate(f"ボラ連動レバ月次＋200日線（15/25%）・戻り+{up * 100:g}%", "voltarget-monthly-asym", "century",
                             c_voltarget_monthly_lev(200, 0.15, 0.25, up), symbols=["MKT", "L2", "L3", "CASH"],
                             params={"up": up}, desc=f"B の改良版に、戻りの遊び +{up * 100:g}% を加えたもの"))
