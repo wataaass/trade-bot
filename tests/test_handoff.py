@@ -9,8 +9,16 @@ from tradebot import handoff as ho
 from tradebot import zoo
 
 
+def load_or_skip(symbol: str):
+    """実データを取得する。ネットにつながらない環境では、失敗ではなく理由つきでスキップする。"""
+    try:
+        return dt.load(symbol)
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"{symbol} の日足を Yahoo Finance から取得できない: {type(e).__name__}: {e}")
+
+
 def test_lev3_matches_zoo_on_real_spy():
-    spy = dt.load("SPY")
+    spy = load_or_skip("SPY")
     mkt = spy
     sig = zoo.c_sma_asym(200, "L3", 0.01)({"MKT": mkt}, mkt)
     days = spy.index[300::23]  # 実データの色々な日で照合
@@ -20,7 +28,7 @@ def test_lev3_matches_zoo_on_real_spy():
 
 
 def test_voltarget_matches_zoo_on_real_spy():
-    spy = dt.load("SPY")
+    spy = load_or_skip("SPY")
     data = {"MKT": spy, "L2": spy, "L3": spy, "CASH": spy}
     sig = zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01)(data, spy)
     name = {"L3": "UPRO", "L2": "SSO", "MKT": "SPYM", "CASH": "BIL"}
@@ -66,7 +74,7 @@ def test_trend_on_keeps_state_inside_band():
 
 def test_every_day_matches_zoo_without_lookahead():
     """直近500営業日の毎日、その日までのデータだけで判断し、検証の判断と一致することを確かめる。"""
-    spy = dt.load("SPY")
+    spy = load_or_skip("SPY")
     data = {"MKT": spy, "L2": spy, "L3": spy, "CASH": spy}
     sig_a = zoo.c_sma_asym(200, "L3", 0.01)({"MKT": spy}, spy)
     sig_b = zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01)(data, spy)
@@ -82,7 +90,7 @@ def test_every_day_matches_zoo_without_lookahead():
 
 def test_370_bars_are_enough():
     """moomoo の1回の取得（最大370本）だけで、全履歴を使った判定と同じになることを確かめる。"""
-    close = dt.load("SPY")["close"]
+    close = load_or_skip("SPY")["close"]
     for d in close.index[close.index >= "2000-01-01"][::5]:
         past = close.loc[:d]
         assert ho.trend_on(past.iloc[-370:]) == ho.trend_on(past), d
@@ -90,7 +98,7 @@ def test_370_bars_are_enough():
 
 
 def test_closes_from_moomoo_feeds_handoff():
-    spy = dt.load("SPY")["close"].iloc[-370:]
+    spy = load_or_skip("SPY")["close"].iloc[-370:]
     # moomoo の返り値の形（新しい順に並ぶこともある）を再現する
     kl = [{"date": int(d.strftime("%Y%m%d")), "close": float(v), "open": 0} for d, v in spy.items()][::-1]
     s = ho.closes_from_moomoo(kl)
