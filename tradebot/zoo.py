@@ -464,3 +464,33 @@ def c_sma_asym(n: int = 200, lev: str = "L3", up: float = 0.01, down: float = 0.
         tgt = pd.Series(np.where(state == 1, lev, off), index=m.index).where(state.notna())
         return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
     return make
+
+
+def c_sma_asym_crash(n: int = 200, lev: str = "L3", up: float = 0.01, crash: float = 0.04, cool: int = 20):
+    """非対称の遊び＋緊急退避: 株が1日で crash 以上下げたら、200日線を待たずに短期国債へ逃げ、
+    その後 cool 営業日は戻らない（その後は通常の判定）。"""
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        sm = ind.sma(m, n)
+        r = m.pct_change().to_numpy()
+        mv, sv = m.to_numpy(), sm.to_numpy()
+        out = np.empty(len(m), dtype=object)
+        state, block = None, 0
+        for i in range(len(m)):
+            if np.isnan(sv[i]):
+                out[i] = None
+                continue
+            if mv[i] < sv[i]:
+                state = False
+            elif mv[i] > sv[i] * (1 + up):
+                state = True
+            if not np.isnan(r[i]) and r[i] <= -crash:
+                block = cool
+            if block > 0:
+                block -= 1
+                out[i] = "CASH"
+                continue
+            out[i] = None if state is None else (lev if state else "CASH")
+        tgt = pd.Series(out, index=m.index)
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, "CASH"])
+    return make
