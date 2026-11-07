@@ -62,3 +62,19 @@ def test_trend_on_keeps_state_inside_band():
     assert ho.trend_on(pd.Series(inside, index=idx))
     assert not ho.trend_on(pd.Series(below, index=idx))
     assert not ho.trend_on(pd.Series(back, index=idx))
+
+
+def test_every_day_matches_zoo_without_lookahead():
+    """直近500営業日の毎日、その日までのデータだけで判断し、検証の判断と一致することを確かめる。"""
+    spy = dt.load("SPY")
+    data = {"MKT": spy, "L2": spy, "L3": spy, "CASH": spy}
+    sig_a = zoo.c_sma_asym(200, "L3", 0.01)({"MKT": spy}, spy)
+    sig_b = zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01)(data, spy)
+    name = {"L3": "UPRO", "L2": "SSO", "MKT": "SPYM", "CASH": "BIL"}
+    close = spy["close"]
+    for d in spy.index[-500:]:
+        past = close.loc[:d]  # その日までのデータだけ
+        want_a = "UPRO" if sig_a["L3"]["entry"].loc[d] else "BIL"
+        assert ho.target_lev3(past) == want_a, d
+        want_b = [name[k] for k in ("L3", "L2", "MKT", "CASH") if sig_b[k]["entry"].loc[d]]
+        assert [ho.target_voltarget(past)] == want_b, d
