@@ -1,41 +1,53 @@
 # trade-bot
 
-moomoo 証券で動かすスイングトレード bot。検証 → ペーパー運用 → 少額の本番、の順に進める。
+moomoo 証券で動かすトレード bot の検証と、厳選した bot の仕様。検証 → ペーパー運用 → 少額の本番、の順に進める。
 
 ## いまの段階: 厳選した bot を Muse に引き継ぎ
 
-- 仕様書: `docs/HANDOFF_MUSE.md`（約300候補から採用2・実験枠2）
-- 手で回すときの手順: `docs/MANUAL.md`
-- 売買判断の参照実装: `tradebot/handoff.py`
-- 全候補の評価: `reports/zoo.md`（`python scripts/run_zoo.py` で再現、元本 $2,000）
-- 改良の記録（試して採用したこと・やめたこと）: `reports/improvements.md`
-- 10年運用したときの幅: `reports/outlook.md`（`python scripts/run_outlook.py`）
-- 今日の判定: `python scripts/signal_today.py`
-- 検証ダッシュボード: https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN（データは `python scripts/export_dashboard.py` で作り直せる）
-- Claude 側のペーパー bot（`scripts/live.py`）は 2026-11-07 に停止
+約300の候補を、手数料と日本の特定口座の税金を引いたうえで評価し、採用2つ・実験枠2つに絞った。ペーパー運用は Muse が行う。
 
-## 検証の仕組み
+| 読むもの | 中身 |
+|---|---|
+| `docs/HANDOFF_MUSE.md` | 仕様書（結論、選び方、bot ごとのルール、税金、本番の注意） |
+| `docs/MUSE_BRIEF.md` | Muse への依頼文 |
+| `docs/MANUAL.md` | 手で回すときの手順 |
+| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、35項目） |
+| `reports/zoo.md` | 全候補の評価表 |
+| `reports/outlook.md` | 10年運用したときの成績の幅 |
+| [検証ダッシュボード](https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN) | 主な結果のグラフ（開くには共有が必要） |
+
+## よく使うコマンド
 
 ```bash
 pip install -e ".[dev]"
-python scripts/run_backtest.py   # 結果は reports/backtest.md
-python -m pytest
-ruff check tradebot scripts tests
+python scripts/signal_today.py          # 今日の判定（A・B・C、--momentum で D も）
+python scripts/run_zoo.py               # 全候補の評価（元本 $2,000、reports/zoo.md）
+python scripts/run_outlook.py           # 10年運用の幅（reports/outlook.md）
+python scripts/export_dashboard.py DIR  # ダッシュボード用の CSV
+python -m pytest                        # テスト
+ruff check tradebot scripts tests       # 静的解析
 ```
 
-- 過去データ: Yahoo Finance の調整済み日足（`data/` にキャッシュ、コミットしない）
-- 約定: シグナルの翌日の始値。手数料 0.132%（上限 $22）とスリッページ 0.05% を引く
-- 期間: 2007〜2018 で型を確かめ、2019〜 は結果を見るだけの期間にする
+push のたびに、GitHub Actions でテストと静的解析が走る（`.github/workflows/test.yml`）。
+
+## 検証の前提
+
+- 価格: Yahoo Finance の調整済み日足（`data/` にキャッシュ、コミットしない）。約100年の米国株全体は Fama/French と Shiller のデータ
+- 費用: 手数料 0.132%（上限 $22）、スリッページ 0.05%。レバレッジ ETF は借入コスト（短期金利＋0.5%）と信託報酬 0.9% を引いて合成
+- 税金: 特定口座。売買益 20.315%（年ごとに通算、損失は3年繰り越し）、配当 約28%。最終日に全部売った手取りで比べる
+- 約定: シグナルの翌日。実物の ETF は始値、合成のレバレッジ ETF は終値（推奨する発注は「翌営業日の引け間際」）
 
 ## 構成
 
 | ファイル | 役割 |
 |---|---|
-| `tradebot/data.py` | 日足の取得とキャッシュ |
-| `tradebot/indicators.py` | 移動平均、RSI |
-| `tradebot/strategies.py` | 戦略の候補 |
-| `tradebot/backtest.py` | ポートフォリオ単位のバックテストと成績指標 |
-| `scripts/run_backtest.py` | 候補の一括比較 |
+| `tradebot/handoff.py` | 引き継ぐ bot の売買判断（Muse が移植する参照実装） |
+| `tradebot/zoo.py` | 評価する候補の一覧と、そのシグナル |
+| `tradebot/backtest.py` | ポートフォリオ単位のバックテスト（手数料・税金・損失の繰り越し・損出し） |
+| `tradebot/longhist.py` | 約100年分のデータ（米国株全体、短期国債、10年国債、CAPE）とレバレッジの合成 |
+| `tradebot/strategies.py` | 基本の戦略（移動平均、モメンタム、ブレイクアウトなど） |
+| `tradebot/data.py`、`tradebot/universe.py` | 日足の取得、S&P500 の各時点の構成銘柄 |
+| `tradebot/live.py`、`scripts/live.py` | 旧ペーパー bot（2026-11-07 に停止） |
 
 ## 秘密情報
 
