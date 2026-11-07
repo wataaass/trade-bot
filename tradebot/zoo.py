@@ -155,6 +155,12 @@ def century_candidates() -> list[Candidate]:
                                 params={"lo": lo, "hi": hi},
                                 desc=f"直近20日の値動き（年率）が{int(lo*100)}%未満なら3倍、{int(hi*100)}%未満なら2倍、それ以上は1倍"
                                      + ("。米国株が200日線より下なら短期国債" if sma_n else "")))
+    for lo, hi in ((0.12, 0.20), (0.15, 0.25), (0.18, 0.30)):
+        cs.append(Candidate(f"ボラ連動レバ月次＋200日線（{int(lo*100)}/{int(hi*100)}%）", "voltarget-monthly", "century",
+                            c_voltarget_monthly_lev(200, lo, hi), symbols=["MKT", "L2", "L3", "CASH"],
+                            params={"lo": lo, "hi": hi},
+                            desc=f"B の改良版。200日線より下なら短期国債（毎日）。上なら前月末の値動きが{int(lo*100)}%未満で3倍、"
+                                 f"{int(hi*100)}%未満で2倍、それ以上は1倍（月1回選び直し）"))
     cs += band_candidates("century")
     return cs
 

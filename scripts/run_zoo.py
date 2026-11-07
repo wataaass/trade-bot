@@ -49,6 +49,10 @@ UNIVERSES = {
     ),
 }
 
+# 元本は本番と同じ約30万円（$2,000）。手数料の上限 $22 は1注文 $16,667 を超えないと効かないので、
+# 元本を大きくすると、売買の多い型の手数料を軽く見積もってしまう（2026-11-08 に気づいて修正）
+INITIAL_CASH = 2_000
+
 DATA: dict = {}
 BENCH: pd.DataFrame | None = None
 CANDS: list = []
@@ -111,7 +115,7 @@ def evaluate(i: int) -> dict:
     sig = {s: f for s, f in sig.items() if s in data}
     out = {"name": c.name, "family": c.family, "universe": c.universe, "desc": c.desc}
     for tlabel, tax in (("pre", None), ("tax", bt.TAXABLE)):
-        cfg = bt.Config(initial_cash=100_000, fractional=True, max_positions=c.max_positions,
+        cfg = bt.Config(initial_cash=INITIAL_CASH, fractional=True, max_positions=c.max_positions,
                         stop_loss=c.stop_loss, max_hold_days=c.max_hold_days, tax=tax)
         res = bt.run(data, sig, cfg, u["start"], u["end"])
         m = bt.metrics(res.equity, res.trades)
@@ -179,7 +183,7 @@ def report(results: dict[str, pd.DataFrame]) -> None:
         "- C. 最大下落が、持ち続けより**10ポイント以上深くない**（ほぼ全損するような型を落とす）",
         "",
         "順位は「最悪の時代での持ち続けとの差」（大きいほど、どの時代でも崩れにくい）。",
-        "手数料 0.132%（上限 $22）、スリッページ 0.05%。レバレッジ型は借入コスト（短期金利＋0.5%）と信託報酬 0.9% 込み。",
+        "元本 $2,000（約30万円）。手数料 0.132%（上限 $22）、スリッページ 0.05%。レバレッジ型は借入コスト（短期金利＋0.5%）と信託報酬 0.9% 込み。",
         "",
     ]
     for name, df in results.items():
