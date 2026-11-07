@@ -97,7 +97,7 @@ def main(out: Path) -> None:
     C, bc, _ = rz.load_universe("century")
     curves = {}
     for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A. SPY 3倍＋200日線", A(), SA),
-                             ("B. ボラ連動レバ", B(), SB)):
+                             ("B. ボラ連動レバ", B(), SB), ("B′. ボラ連動 20/35%（候補）", Bp(), SB)):
         curves[name] = run(C, make(C, bc), syms, "1927-06-01", None, cash=1.0, tax=None).equity
     eq = pd.DataFrame(curves)
     n = 252 * 10
