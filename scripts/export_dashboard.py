@@ -26,6 +26,7 @@ from tradebot import zoo  # noqa: E402
 
 A = lambda: zoo.c_sma_asym(200, "L3", 0.01)  # noqa: E731
 B = lambda: zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01)  # noqa: E731
+Bp = lambda: zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01)  # noqa: E731
 SA, SB = ["L3", "CASH"], ["MKT", "L2", "L3", "CASH"]
 
 
@@ -50,7 +51,8 @@ def main(out: Path) -> None:
               ("A. SPY 3倍＋200日線", A()(D, b), SA),
               ("B. ボラ連動レバ", B()(D, b), SB),
               ("Muse 月末型 SMA250", zoo.e_trend("SPY", "IEF", 250, monthly=True)(D, b), ["SPY", "IEF"]),
-              ("C. QQQ 3倍（実験）", c_make(D, b), ["QQQ3", "CASH"])]
+              ("C. QQQ 3倍（実験）", c_make(D, b), ["QQQ3", "CASH"]),
+              ("B′. ボラ連動 20/35%（候補）", Bp()(D, b), SB)]
     rows = []
     for name, sig, syms in strats:
         res = run(D, sig, syms, U["start"], U["end"], cash=300_000, costs=bt.Costs(commission_max=22 * 150))
@@ -66,9 +68,11 @@ def main(out: Path) -> None:
                         ("A. SPY 3倍＋200日線", "etf", "SPY版 3倍 200日線・戻り+1%"),
                         ("B. ボラ連動レバ", "etf", "SPY版 ボラ連動レバ月次＋200日線（15/25%）・戻り+1%"),
                         ("C. QQQ 3倍（実験）", "etf", "QQQ 3倍⇄CASH 200日線・毎日"),
+                        ("B′. ボラ連動 20/35%（候補）", "etf", "SPY版 ボラ連動レバ月次＋200日線（20/35%）・戻り+1%"),
                         ("持ち続け", "century", "1倍 持ち続け"),
                         ("A. SPY 3倍＋200日線", "century", "3倍 200日線・戻り+1%"),
                         ("B. ボラ連動レバ", "century", "ボラ連動レバ月次＋200日線（15/25%）・戻り+1%"),
+                        ("B′. ボラ連動 20/35%（候補）", "century", "ボラ連動レバ月次＋200日線（20/35%）・戻り+1%"),
                         ("SPY 持ち続け", "stocks", "SPY 持ち続け"),
                         ("D. 個別株モメンタム（実験）", "stocks", "モメンタム6-1 上位10")):
         data = {"etf": "ETF 2003〜2026", "century": "米国株全体 1927〜2026", "stocks": "S&P500 個別株 1997〜2026"}[u]
