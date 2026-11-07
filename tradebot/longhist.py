@@ -100,3 +100,42 @@ def leveraged(mkt: pd.DataFrame, cash: pd.DataFrame, lev: float, spread: float =
     close = 100 * (1 + r).cumprod()
     close = close.clip(lower=1e-9)  # 1日で -100% 以下になったら実質ゼロ
     return _frame(close, pd.Series(0.0, index=close.index))
+
+
+def _shiller_gs10() -> pd.Series:
+    """米10年国債の利回り（月次、年率の小数）。index は月初。"""
+    path = CACHE / "shiller_gs10.csv"
+    if not path.exists():
+        r = requests.get(SHILLER_URL, headers=_HEADERS, timeout=60)
+        r.raise_for_status()
+        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7)
+        x = x[pd.to_numeric(x["Date"], errors="coerce").notna()]
+        x = x[pd.to_numeric(x["Rate GS10"], errors="coerce").notna()]
+        d = x["Date"].astype(float)
+        year = d.astype(int)
+        month = ((d - year) * 100).round().astype(int)
+        idx = pd.to_datetime(dict(year=year, month=month, day=1))
+        pd.Series(x["Rate GS10"].astype(float).values / 100, index=idx, name="gs10").to_csv(path)
+    return pd.read_csv(path, index_col=0, parse_dates=True)["gs10"]
+
+
+def bond10(index: pd.DatetimeIndex) -> pd.DataFrame:
+    """米10年国債の値動き（利息込み）を合成する。
+
+    月次リターン ≒ 前月の利回り/12 ＋ 修正デュレーション × (前月の利回り − 今月の利回り)。
+    修正デュレーションは、10年・半年複利の額面債の近似 (1 − (1 + y/2)^−20) / y。
+    月次リターンを、その月の営業日に均等（複利）に割り振る。2002年8月以降は実在の IEF（7〜10年国債）につなぐ。
+    """
+    y = _shiller_gs10()
+    y_prev = y.shift(1)
+    dur = (1 - (1 + y_prev / 2) ** -20) / y_prev
+    r_m = (y_prev / 12 + dur * (y_prev - y)).dropna()
+    month = index.to_period("M").to_timestamp()
+    days_in_month = pd.Series(1, index=index).groupby(month).transform("size")
+    r_d = (1 + pd.Series(r_m.reindex(month).to_numpy(), index=index)) ** (1 / days_in_month) - 1
+    ief = dt.load("IEF")
+    ief_r = ief["close"].pct_change().reindex(index)
+    splice = index >= ief.index[0] + pd.Timedelta(days=5)
+    r_d = r_d.where(~splice, ief_r).fillna(0)
+    close = 100 * (1 + r_d).cumprod()
+    return _frame(close, pd.Series(0.0, index=index))

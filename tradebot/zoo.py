@@ -361,3 +361,54 @@ def c_voltarget_monthly_lev(sma_n: int = 200, lo: float = 0.15, hi: float = 0.25
         tgt = lev.where(m > sm, "CASH").where(sm.notna() & lev.notna())
         return targets_to_signals(tgt, pd.Series(True, index=idx), ["MKT", "L2", "L3", "CASH"])
     return make
+
+
+def c_combo(lev: str = "L3", mode: str = "and", n: int = 200, months: int = 12):
+    """200日線と時系列モメンタムの組み合わせ（毎日判定）。
+
+    mode="and": 両方が上向きのときだけ lev（守り重視）
+    mode="or" : どちらかが上向きなら lev（ダマシで逃げにくい）
+    """
+    def make(data, bench):
+        m, c = data["MKT"]["close"], data["CASH"]["close"]
+        sm = ind.sma(m, n)
+        k = 21 * months
+        a = m > sm
+        b = (m / m.shift(k)) > (c / c.shift(k)).reindex(m.index)
+        on = (a & b) if mode == "and" else (a | b)
+        tgt = pd.Series(np.where(on, lev, "CASH"), index=m.index).where(sm.notna() & m.shift(k).notna())
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, "CASH"])
+    return make
+
+
+def c_sma_trail(n: int = 200, lev: str = "L3", trail: float = 0.25):
+    """200日線＋トレーリングストップ（毎日判定）。
+
+    株が n 日線より上なら lev を持つ。ただし、持ち始めてからの lev の最高値から trail 以上下がったら
+    短期国債に逃げ、株が一度 n 日線を割ってから再び上抜けるまで戻らない。
+    """
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        lv = data[lev]["close"].reindex(m.index)
+        sm = ind.sma(m, n)
+        above = (m > sm).to_numpy()
+        valid = sm.notna().to_numpy()
+        lvv = lv.to_numpy()
+        out = np.empty(len(m), dtype=object)
+        holding, stopped, peak = False, False, 0.0
+        for i in range(len(m)):
+            if not valid[i]:
+                out[i] = None
+                continue
+            if not above[i]:
+                holding, stopped = False, False
+            elif not holding and not stopped:
+                holding, peak = True, lvv[i]
+            if holding:
+                peak = max(peak, lvv[i])
+                if lvv[i] <= peak * (1 - trail):
+                    holding, stopped = False, True
+            out[i] = lev if holding else "CASH"
+        tgt = pd.Series(out, index=m.index)
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, "CASH"])
+    return make
