@@ -512,3 +512,19 @@ def c_sma_asym_crash(n: int = 200, lev: str = "L3", up: float = 0.01, crash: flo
         tgt = pd.Series(out, index=m.index)
         return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, "CASH"])
     return make
+
+
+def c_rate_lev(up: float = 0.01, rate_hi: float = 0.04, hi_lev: str = "L2", lo_lev: str = "L3"):
+    """金利で倍率を変える＋非対称の遊び: 前月末までの1年の短期金利（年率）が rate_hi 以上なら hi_lev、未満なら lo_lev。"""
+    def make(data, bench):
+        m, c = data["MKT"]["close"], data["CASH"]["close"]
+        idx = m.index
+        rf = (c / c.shift(252) - 1).reindex(idx)
+        me = month_end(idx)
+        rate = rf.where(me).ffill().shift(1)
+        lev = pd.Series(np.where(rate >= rate_hi, hi_lev, lo_lev), index=idx).where(rate.notna())
+        sm = ind.sma(m, 200)
+        on = pd.Series(np.where(m > sm * (1 + up), 1.0, np.where(m < sm, 0.0, np.nan)), index=idx).ffill()
+        tgt = lev.where(on == 1, "CASH").where(sm.notna() & lev.notna() & on.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=idx), sorted({hi_lev, lo_lev, "CASH"}))
+    return make
