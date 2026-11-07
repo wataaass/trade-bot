@@ -77,7 +77,11 @@ def load_universe(name: str):
             data[key] = lh.leveraged(b, cash.reindex(b.index).ffill(), lev)
         # 約100年の土俵の型をそのまま使えるよう、別名を付ける
         data["MKT"], data["L2"], data["L3"] = data["SPY"], data["SPY2"], data["SPY3"]
-        return data, data["SPY"], zoo.etf_candidates()
+        cands = zoo.etf_candidates()
+        cands += [zoo.Candidate(f"SPY版 {c.name}", c.family.replace("band", "spy-band"), "etf", c.make,
+                                symbols=c.symbols, params=c.params, desc=c.desc.replace("株が", "SPY が"))
+                  for c in zoo.band_candidates("etf")]
+        return data, data["SPY"], cands
     if name == "stocks":
         from scripts.run_stocks import load_stocks
         data = load_stocks()

@@ -27,11 +27,22 @@ def target_lev3(spy_close: pd.Series) -> str:
 
 
 def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -> str:
-    """B. ボラ連動レバ＋200日線: SPY が200日線以下なら BIL。上なら、直近20日の値動き（年率）で
-    15%未満は UPRO（3倍）、25%未満は SSO（2倍）、それ以上は SPYM（1倍）。"""
-    if not _sma_on(spy_close):
+    """B. ボラ連動レバ＋200日線（改良版）:
+    1. SPY の終値が200日移動平均以下なら BIL
+    2. そうでなければ、倍率を「前の月の最終営業日」の終値で計った値動きで決める:
+       直近20営業日の日次リターンの標準偏差×√252 が 15%未満なら UPRO（3倍）、
+       25%未満なら SSO（2倍）、それ以上なら SPYM（1倍）
+    倍率の選び直しは月1回だけなので、乗り換え（売買と税金）が少ない。
+    spy_close の index は日付であること。
+    """
+    c = spy_close.dropna()
+    if not _sma_on(c):
         return "BIL"
-    r = spy_close.dropna().pct_change().iloc[-VOL_N:]
+    last = c.index[-1]
+    prev = c.loc[c.index.to_period("M") < last.to_period("M")]
+    if len(prev) < VOL_N + 1:
+        raise ValueError("前月末までに21営業日以上の終値が必要")
+    r = prev.pct_change().iloc[-VOL_N:]
     vol = float(r.std() * np.sqrt(252))
     return "UPRO" if vol < lo else "SSO" if vol < hi else "SPYM"
 

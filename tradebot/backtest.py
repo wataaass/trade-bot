@@ -52,6 +52,7 @@ class Config:
     max_hold_days: int | None = None
     costs: Costs = field(default_factory=Costs)
     tax: Tax | None = None  # None なら税金を考えない
+    harvest: bool = False  # 年末の損出し: 最終営業日の終値で含み損の建玉を売って同じ値段で買い直す
 
 
 @dataclass
@@ -236,6 +237,20 @@ def run(
                     continue
             if cfg.max_hold_days is not None and held_days[sym] >= cfg.max_hold_days:
                 pending_exit.add(sym)
+
+        # 年末の損出し（日本にはウォッシュセール規制がないので、売ってすぐ買い直してよい）
+        if cfg.harvest and tax is not None and (i + 1 == len(dates) or dates[i + 1].year != day.year):
+            for sym, t in open_pos.items():
+                px = c.at[day, sym]
+                if math.isnan(px) or px >= t.entry_price:
+                    continue
+                sell = px * (1 - costs.slippage) * t.shares
+                fee_s = costs.commission(sell)
+                buy_px = px * (1 + costs.slippage)
+                fee_b = costs.commission(buy_px * t.shares)
+                realized[day.year] = realized.get(day.year, 0.0) + sell - fee_s - (t.entry_price * t.shares + t.fees)
+                cash -= (buy_px * t.shares + fee_b) - (sell - fee_s)
+                t.entry_price, t.fees = buy_px, fee_b
 
         # 3) 当日の終値で評価し、翌日の注文を決める
         pos_value = sum(t.shares * c.at[day, s] for s, t in open_pos.items())

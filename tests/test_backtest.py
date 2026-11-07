@@ -216,3 +216,30 @@ def test_stock_momentum_market_filter_keeps_winners():
     for s in data:
         assert (plain[s].loc[later, "exit"] == filt[s].loc[later, "exit"]).all()
         assert filt[s]["exit"].dtype == bool
+
+
+def test_year_end_harvest_realizes_loss_and_resets_basis():
+    # 2020年に100で買い、年末に80（含み損）、2021年に100まで戻して売る
+    closes = [100, 100, 90, 80, 80, 90, 100, 100]
+    df = make_df(closes, start="2020-12-24")  # 12/24〜: 12/31 が年末の最終営業日
+    s = sig(df, entry_days=[0], exit_days=[6])
+    base = dict(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.TAXABLE)
+    plain = bt.run({"A": df}, {"A": s}, bt.Config(**base))
+    harv = bt.run({"A": df}, {"A": s}, bt.Config(**base, harvest=True))
+    # 損出しなし: 100→100 で損益ゼロ、税金ゼロ
+    assert plain.tax_paid == pytest.approx(0, abs=1e-9)
+    # 損出しあり: 2020年に -200 を確定（繰り越し）、2021年に 80→100 の +200 と相殺 → 税金ゼロ、手取りは同じ
+    assert harv.tax_paid == pytest.approx(0, abs=1e-9)
+    assert harv.equity.iloc[-1] == pytest.approx(plain.equity.iloc[-1])
+
+
+def test_harvest_offsets_same_year_gain():
+    # 同じ年に別の銘柄で利益が出ていれば、年末の含み損を確定させて税金が減る
+    a = make_df([100, 100, 120, 120, 120, 120, 120, 120], start="2020-12-24")
+    b = make_df([100, 100, 100, 80, 80, 80, 80, 80], start="2020-12-24")  # 最後の2日は2021年
+    sa = sig(a, entry_days=[0], exit_days=[2])  # A は 100 で買い 120 で年内に売る
+    sb = sig(b, entry_days=[0])
+    base = dict(initial_cash=2000, max_positions=2, fractional=True, costs=NO_COST, tax=bt.TAXABLE)
+    plain = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, bt.Config(**base))
+    harv = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, bt.Config(**base, harvest=True))
+    assert harv.tax_paid < plain.tax_paid

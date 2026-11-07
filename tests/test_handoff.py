@@ -22,7 +22,7 @@ def test_lev3_matches_zoo_on_real_spy():
 def test_voltarget_matches_zoo_on_real_spy():
     spy = dt.load("SPY")
     data = {"MKT": spy, "L2": spy, "L3": spy, "CASH": spy}
-    sig = zoo.c_voltarget(200, 0.15, 0.25)(data, spy)
+    sig = zoo.c_voltarget_monthly_lev(200, 0.15, 0.25)(data, spy)
     name = {"L3": "UPRO", "L2": "SSO", "MKT": "SPYM", "CASH": "BIL"}
     for d in spy.index[300::89]:
         want = [name[k] for k in ("L3", "L2", "MKT", "CASH") if sig[k]["entry"].loc[d]]

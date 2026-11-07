@@ -155,6 +155,7 @@ def century_candidates() -> list[Candidate]:
                                 params={"lo": lo, "hi": hi},
                                 desc=f"直近20日の値動き（年率）が{int(lo*100)}%未満なら3倍、{int(hi*100)}%未満なら2倍、それ以上は1倍"
                                      + ("。米国株が200日線より下なら短期国債" if sma_n else "")))
+    cs += band_candidates("century")
     return cs
 
 
@@ -309,3 +310,54 @@ def stock_candidates(members: pd.DataFrame) -> list[Candidate]:
     cs.append(Candidate("20日ブレイクアウト（5銘柄）", "breakout", "stocks", s_swing(members, "breakout20"),
                         max_positions=5, stop_loss=0.08, desc="20日高値更新で買い、10日安値割れで売り"))
     return cs
+
+
+# ---------------------------------------------------------------- 改良版: 200日線に「遊び」を設ける
+
+
+def c_sma_band(n: int, lev: str = "L3", band: float = 0.01, off: str = "CASH"):
+    """移動平均の上下に band の幅の「遊び」を設ける。
+
+    株の終値が 移動平均×(1+band) を上回ったら lev を持ち、移動平均×(1−band) を下回ったら off に逃げる。
+    その間にいる間は、前の状態を続ける。線の近くでの行ったり来たり（ダマシ）と、そのたびの税金を減らす。
+    """
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        sm = ind.sma(m, n)
+        state = pd.Series(np.where(m > sm * (1 + band), 1.0, np.where(m < sm * (1 - band), 0.0, np.nan)),
+                          index=m.index).ffill()
+        tgt = pd.Series(np.where(state == 1, lev, off), index=m.index).where(state.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
+    return make
+
+
+def band_candidates(universe: str) -> list[Candidate]:
+    cs = []
+    for lev, lname in (("L2", "2倍"), ("L3", "3倍")):
+        for n in (150, 200, 250):
+            for band in (0.0, 0.005, 0.01, 0.02, 0.03, 0.05):
+                cs.append(Candidate(f"{lname} {n}日線 遊び{band * 100:g}%", f"band-{lev}-{n}", universe,
+                                    c_sma_band(n, lev, band), symbols=[lev, "CASH"],
+                                    params={"n": n, "band": band},
+                                    desc=f"株が{n}日線の{band * 100:g}%上を超えたら{lname}、{band * 100:g}%下を割ったら短期国債"))
+    return cs
+
+
+def c_voltarget_monthly_lev(sma_n: int = 200, lo: float = 0.15, hi: float = 0.25):
+    """B の改良版: 200日線で逃げる・戻る判定は毎日、倍率（3倍・2倍・1倍）の選び直しは月1回だけ。
+
+    乗り換え（＝売買と税金）を減らすため。
+    """
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        idx = m.index
+        v = realized_vol(m, 20)
+        lev_daily = pd.Series(np.where(v < lo, "L3", np.where(v < hi, "L2", "MKT")), index=idx).where(v.notna())
+        me = month_end(idx)
+        # 前月の最終営業日の終値で決めた倍率を、翌月の1日目から月末まで使う
+        # （＝各日の倍率は「前の月の最終営業日の値動き」で決まる。月末当日はまだ前月分を使う）
+        lev = lev_daily.where(me).ffill().shift(1)
+        sm = ind.sma(m, sma_n)
+        tgt = lev.where(m > sm, "CASH").where(sm.notna() & lev.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=idx), ["MKT", "L2", "L3", "CASH"])
+    return make
