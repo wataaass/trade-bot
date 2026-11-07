@@ -5,6 +5,7 @@ moomoo 証券で動かすスイングトレード bot。検証 → ペーパー�
 ## いまの段階: 厳選した bot を Muse に引き継ぎ
 
 - 仕様書: `docs/HANDOFF_MUSE.md`（約300候補から採用2・実験枠2）
+- 手で回すときの手順: `docs/MANUAL.md`
 - 売買判断の参照実装: `tradebot/handoff.py`
 - 全候補の評価: `reports/zoo.md`（`python scripts/run_zoo.py` で再現、元本 $2,000）
 - 改良の記録（試して採用したこと・やめたこと）: `reports/improvements.md`
