@@ -552,3 +552,15 @@ def c_fast_reentry(exit_n: int = 200, entry_n: int = 100, lev: str = "L3", up: f
         tgt = pd.Series(np.where(on == 1, lev, off), index=m.index).where(se.notna() & on.notna())
         return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
     return make
+
+
+def c_confirm_exit(n: int = 200, lev: str = "L3", up: float = 0.01, days: int = 2, off: str = "CASH"):
+    """逃げるのは days 日続けて n 日線を割ったとき、戻るのは n 日線の (1+up) 倍を超えたとき。1日だけのダマシを避けるため。"""
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        sm = ind.sma(m, n)
+        below = (m < sm).astype(int).rolling(days).sum() == days
+        on = pd.Series(np.where(below, 0.0, np.where(m > sm * (1 + up), 1.0, np.nan)), index=m.index).ffill()
+        tgt = pd.Series(np.where(on == 1, lev, off), index=m.index).where(sm.notna() & on.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
+    return make
