@@ -48,3 +48,17 @@ def test_voltarget_picks_leverage_by_volatility():
     data = {"MKT": mkt, "CASH": cash, "L2": mkt, "L3": mkt}
     sig = zoo.c_voltarget(None, 0.10, 0.20)(data, mkt)
     assert sig["L3"]["entry"].iloc[-1] and not sig["MKT"]["entry"].iloc[-1]
+
+
+def test_sma_asym_exits_fast_and_reenters_late():
+    # 200日間横ばい → 線の少し上（+0.5%、遊びの中）→ 線の下 → 線の+0.5%（戻らない）→ +2%（戻る）
+    close = [100.0] * 200 + [100.5] * 5 + [99.0] * 5 + [100.5] * 5 + [102.5] * 5
+    mkt = frame(close)
+    cash = frame([100.0] * len(close))
+    data = {"MKT": mkt, "CASH": cash, "L3": mkt}
+    sig = zoo.c_sma_asym(200, "L3", 0.01)(data, mkt)
+    want = sig["L3"]["entry"]
+    assert not want.iloc[204]          # 線の+0.5%: まだ一度も「持つ」になっていない
+    assert not want.iloc[209]          # 線を割ったら逃げる
+    assert not want.iloc[214]          # +0.5% に戻っただけでは戻らない
+    assert want.iloc[219]              # +1% を超えたら戻る

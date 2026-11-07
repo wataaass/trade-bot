@@ -6,7 +6,10 @@ moomoo 証券で動かすスイングトレード bot。検証 → ペーパー�
 
 - 仕様書: `docs/HANDOFF_MUSE.md`（160候補から採用2・実験枠2）
 - 売買判断の参照実装: `tradebot/handoff.py`
-- 全候補の評価: `reports/zoo.md`（`python scripts/run_zoo.py` で再現）
+- 全候補の評価: `reports/zoo.md`（`python scripts/run_zoo.py` で再現、元本 $2,000）
+- 改良の記録（試して採用したこと・やめたこと）: `reports/improvements.md`
+- 10年運用したときの幅: `reports/outlook.md`（`python scripts/run_outlook.py`）
+- 今日の判定: `python scripts/signal_today.py`
 - Claude 側のペーパー bot（`scripts/live.py`）は 2026-11-07 に停止
 
 ## 検証の仕組み
