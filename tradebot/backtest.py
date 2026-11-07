@@ -56,6 +56,7 @@ class Config:
     costs: Costs = field(default_factory=Costs)
     tax: Tax | None = None  # None なら税金を考えない
     harvest: bool = False  # 年末の損出し: 最終営業日の終値で含み損の建玉を売って同じ値段で買い直す
+    monthly_contribution: float = 0.0  # 毎月の積み立て（各月の最初の営業日に入金し、今持っている銘柄を買い足す）
 
 
 @dataclass
@@ -84,6 +85,7 @@ class Result:
     trades: list[Trade]
     exposure: pd.Series
     tax_paid: float = 0.0
+    contributions: pd.Series | None = None  # 積み立てた日と額（初日の元本は含まない）
 
     def trades_frame(self) -> pd.DataFrame:
         return pd.DataFrame([t.__dict__ | {"ret": t.ret} for t in self.trades])
@@ -133,6 +135,7 @@ def run(
     exposure = np.empty(len(dates))
     pending_exit: set[str] = set()
     pending_entry: list[str] = []
+    contrib: dict[pd.Timestamp, float] = {}
 
     def close_position(sym: str, price: float, day: pd.Timestamp, reason: str) -> None:
         nonlocal cash
@@ -209,6 +212,11 @@ def run(
             settle(dates[i - 1].year)
             cover_shortfall(day, dates[i - 1])
 
+        deposit = cfg.monthly_contribution if i > 0 and day.month != dates[i - 1].month else 0.0
+        if deposit > 0:
+            cash += deposit
+            contrib[day] = deposit
+
         # 1) 前日の終値で決めた注文を、当日の始値で執行する
         for sym in list(pending_exit):
             if sym in open_pos and not math.isnan(o.at[day, sym]):
@@ -236,6 +244,24 @@ def run(
                 open_pos[sym] = Trade(sym, day, fill, shares, fees=fee)
                 held_days[sym] = 0
         pending_entry = []
+
+        # 積み立て: 入金した分で、今持っている銘柄を買い足す（取得単価は移動平均）
+        if deposit > 0 and open_pos and cash > 0:
+            per = cash / len(open_pos)
+            for sym, t in open_pos.items():
+                px = o.at[day, sym]
+                if math.isnan(px):
+                    continue
+                fill = px * (1 + costs.slippage)
+                budget = per - costs.commission(per)
+                add = budget / fill if cfg.fractional else math.floor(budget / fill)
+                if add <= 0:
+                    continue
+                fee = costs.commission(fill * add)
+                cash -= fill * add + fee
+                t.entry_price = (t.entry_price * t.shares + fill * add) / (t.shares + add)
+                t.shares += add
+                t.fees += fee
 
         # 2) 配当の税金、当日の値動きで損切り・保有日数を判定する
         for sym in list(open_pos):
@@ -297,7 +323,8 @@ def run(
     settle(last.year)
     equity[-1] = cash
 
-    return Result(pd.Series(equity, index=dates), trades, pd.Series(exposure, index=dates), tax_paid)
+    return Result(pd.Series(equity, index=dates), trades, pd.Series(exposure, index=dates), tax_paid,
+                  pd.Series(contrib, dtype=float))
 
 
 def hold_signals(sym: str, df: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -339,3 +366,26 @@ def buy_and_hold(df: pd.DataFrame, cfg: Config, start: str | None = None, end: s
     shares = budget / fill if cfg.fractional else math.floor(budget / fill)
     cash = cfg.initial_cash - shares * fill - cfg.costs.commission(shares * fill)
     return cash + shares * d["close"]
+
+
+def money_weighted_return(res: Result, initial_cash: float) -> float:
+    """積み立てを含めた年率（内部収益率）。初日に元本、各入金日に積み立てを出し、最終日に手取りを受け取る。"""
+    eq = res.equity
+    flows = [(eq.index[0], -initial_cash)]
+    if res.contributions is not None:
+        flows += [(d, -a) for d, a in res.contributions.items()]
+    flows.append((eq.index[-1], float(eq.iloc[-1])))
+    t = np.array([(d - eq.index[0]).days / 365.25 for d, _ in flows])
+    cf = np.array([a for _, a in flows])
+
+    def npv(r: float) -> float:
+        return float(np.sum(cf / (1 + r) ** t))
+
+    lo_, hi_ = -0.99, 10.0
+    for _ in range(200):
+        mid = (lo_ + hi_) / 2
+        if npv(mid) > 0:
+            lo_ = mid
+        else:
+            hi_ = mid
+    return (lo_ + hi_) / 2

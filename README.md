@@ -11,7 +11,7 @@ moomoo 証券で動かすトレード bot の検証と、厳選した bot の仕
 | `docs/HANDOFF_MUSE.md` | 仕様書（結論、選び方、bot ごとのルール、税金、本番の注意） |
 | `docs/MUSE_BRIEF.md` | Muse への依頼文 |
 | `docs/MANUAL.md` | 手で回すときの手順 |
-| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、45項目、冒頭に目次） |
+| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、48項目、冒頭に目次） |
 | `reports/zoo.md` | 全候補の評価表 |
 | `reports/outlook.md` | 10年運用したときの成績の幅 |
 | [検証ダッシュボード](https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN) | 主な結果のグラフ（開くには共有が必要） |
@@ -23,6 +23,7 @@ pip install -e ".[dev]"
 python scripts/signal_today.py          # 今日の判定（A・B・C、--momentum で D も）
 python scripts/run_zoo.py               # 全候補の評価（元本 $2,000、reports/zoo.md）
 python scripts/run_outlook.py           # 10年運用の幅（reports/outlook.md）
+python scripts/run_contrib.py           # 毎月積み立てた場合（reports/contrib.md）
 python scripts/export_dashboard.py DIR  # ダッシュボード用の CSV
 python -m pytest                        # テスト
 ruff check tradebot scripts tests       # 静的解析

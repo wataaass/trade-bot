@@ -268,3 +268,30 @@ def test_withholding_refunds_when_loss_follows():
     res = bt.run({"A": a, "B": b}, {"A": sa, "B": sb}, cfg)
     realized = sum(t.exit_price * t.shares - t.entry_price * t.shares for t in res.trades)
     assert res.tax_paid == pytest.approx(max(0.0, realized) * 0.20315)
+
+
+def test_monthly_contribution_buys_more_at_average_cost():
+    # 毎日 0.05% ずつ上がる値段。費用・税金なしなら、積み立てを含めた年率は値上がりの年率と同じになる
+    idx = pd.bdate_range("2020-01-01", "2022-12-30")
+    c = pd.Series(100 * 1.0005 ** np.arange(len(idx)), index=idx)
+    df = pd.DataFrame({"open": c, "high": c, "low": c, "close": c, "volume": 1})
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, monthly_contribution=100)
+    res = bt.run({"A": df}, {"A": sig(df, entry_days=[0])}, cfg)
+    assert len(res.contributions) == 35  # 2020年2月〜2022年12月
+    assert res.trades[0].shares > 1000 / c.iloc[1]  # 買い足している
+    days = (idx[-1] - idx[1]).days / 365.25  # 初日の翌日に買う
+    growth = (c.iloc[-1] / c.iloc[1]) ** (1 / days) - 1
+    assert bt.money_weighted_return(res, 1000) == pytest.approx(growth, abs=0.002)
+
+
+def test_contribution_basis_is_moving_average_for_tax():
+    df = _yearly([100, 100, 200, 200, 200, 200])
+    cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST, tax=bt.TAXABLE,
+                    monthly_contribution=1000)
+    res = bt.run({"A": df}, {"A": sig(df, entry_days=[0], exit_days=[4])}, cfg)
+    t = res.trades[0]
+    # 100 で 10株買い、月替わりに 200 で 5株買い足す → 平均 133.33、15株
+    assert t.shares == pytest.approx(15)
+    assert t.entry_price == pytest.approx(2000 / 15)
+    gain = 15 * 200 - 2000
+    assert res.tax_paid == pytest.approx(gain * 0.20315)
