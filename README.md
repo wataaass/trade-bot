@@ -10,6 +10,7 @@ moomoo 証券で動かすスイングトレード bot。検証 → ペーパー�
 - 改良の記録（試して採用したこと・やめたこと）: `reports/improvements.md`
 - 10年運用したときの幅: `reports/outlook.md`（`python scripts/run_outlook.py`）
 - 今日の判定: `python scripts/signal_today.py`
+- 検証ダッシュボード: https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN（データは `python scripts/export_dashboard.py` で作り直せる）
 - Claude 側のペーパー bot（`scripts/live.py`）は 2026-11-07 に停止
 
 ## 検証の仕組み
