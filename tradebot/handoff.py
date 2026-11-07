@@ -69,6 +69,21 @@ def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -
     return "UPRO" if vol < lo else "SSO" if vol < hi else "SPYM"
 
 
+# B・B′ の持ち方（改良49）: SSO・SPYM に乗り換えず、UPRO と BIL の比率で同じ倍率にする。
+# 倍率を下げるときは UPRO の一部を売るだけなので、確定する利益（税金）と売買が減り、
+# 実物の ETF（2010〜2026）で B は年 +1.1、B′ は年 +0.4 ポイント良かった。
+UPRO_SHARE = {"UPRO": 1.0, "SSO": 2 / 3, "SPYM": 1 / 3, "BIL": 0.0}
+
+
+def target_weights(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -> dict[str, float]:
+    """B・B′ の目標の比率。target_voltarget の銘柄を、UPRO と BIL の比率に置き換える。
+
+    例: SSO（2倍）の月は {"UPRO": 2/3, "BIL": 1/3}、逃げるときは {"UPRO": 0, "BIL": 1}。
+    """
+    w = UPRO_SHARE[target_voltarget(spy_close, lo, hi)]
+    return {"UPRO": w, "BIL": 1.0 - w}
+
+
 def target_tqqq(qqq_close: pd.Series) -> str:
     """C. QQQ 3倍＋200日線（実験枠）: QQQ の終値が200日線より上なら TQQQ、そうでなければ BIL。
     （C は遊びなしで検証した型のまま）"""
@@ -125,6 +140,41 @@ def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict
     qty = int(budget // prices[target])
     if qty > 0:
         orders.append({"side": "BUY", "symbol": target, "qty": qty})
+    return orders
+
+
+def plan_rebalance(holdings: dict[str, int], cash: float, weights: dict[str, float], prices: dict[str, float],
+                   keep_cash: float = 0.01) -> list[dict]:
+    """目標の比率（target_weights）に合わせる注文を作る。差の分だけ売買し、売りが先。
+
+    呼ぶのは、目標の比率が前回合わせたときから変わった日だけ（変わっていなければ呼ばない。
+    値動きで比率がずれても直さない。検証はその前提）。
+    holdings・cash・prices・keep_cash の意味は plan_switch と同じ。
+    """
+    total = cash + sum(q * prices[s] for s, q in holdings.items())
+    investable = total * (1 - keep_cash)
+    orders: list[dict] = []
+    after = dict(holdings)
+    avail = cash
+    for sym, qty in holdings.items():
+        if qty <= 0:
+            continue
+        want = weights.get(sym, 0.0) * investable
+        have = qty * prices[sym]
+        sell = qty if want <= 0 else min(qty, round((have - want) / prices[sym])) if have > want else 0
+        if sell > 0:
+            orders.append({"side": "SELL", "symbol": sym, "qty": int(sell)})
+            after[sym] = qty - sell
+            avail += sell * prices[sym]
+    spend = avail - keep_cash * total
+    for sym, w in sorted(weights.items(), key=lambda kv: -kv[1]):
+        if w <= 0:
+            continue
+        need = w * investable - after.get(sym, 0) * prices[sym]
+        qty = int(min(need, spend) // prices[sym])
+        if qty > 0:
+            orders.append({"side": "BUY", "symbol": sym, "qty": qty})
+            spend -= qty * prices[sym]
     return orders
 
 
