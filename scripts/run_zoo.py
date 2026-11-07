@@ -224,14 +224,16 @@ def report(results: dict[str, pd.DataFrame]) -> None:
 def main() -> None:
     args = sys.argv[1:]
     names = [] if args == ["--report"] else (args or list(UNIVERSES))  # --report: 保存済みの結果から表だけ作り直す
+    fresh = {n: run_universe(n) for n in names}
+    # 書き込む直前に保存済みの表を読み直し、今回評価した土俵の行だけを差し替える
+    # （別の評価を並行して走らせても、古い結果で上書きしないように）
     results = {}
     csv = ROOT / "reports" / "zoo.csv"
-    if csv.exists():  # 前回の結果を残しつつ、指定した土俵だけ更新する
+    if csv.exists():
         old = pd.read_csv(csv)
         for u, g in old.groupby("universe"):
             results[u] = g.reset_index(drop=True)
-    for n in names:
-        results[n] = run_universe(n)
+    results.update(fresh)
     results = {k: apply_gates(v, k) for k, v in results.items()}
     report({k: results[k] for k in UNIVERSES if k in results})
 

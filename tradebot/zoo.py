@@ -300,6 +300,20 @@ def s_mom(members: pd.DataFrame, top_n: int, kind: str = "12-1", exit_rank=None,
     return make
 
 
+def s_mom_filtered(members: pd.DataFrame, top_n: int, lookback: int):
+    """モメンタム（lookback 日、直近1か月を除く）＋相場フィルター（SPY が200日線より下の月末は全部売る）。"""
+    def make(data, bench):
+        sig = s_mom(members, top_n, lookback=lookback)(data, bench)
+        idx = next(iter(sig.values())).index
+        mok = st.market_ok(bench).reindex(idx).fillna(False).astype(bool)
+        me = month_end(idx)
+        for s in sig:
+            sig[s]["entry"] = sig[s]["entry"] & mok
+            sig[s]["exit"] = sig[s]["exit"] | ((~mok) & me)
+        return sig
+    return make
+
+
 def s_swing(members: pd.DataFrame, kind: str, mom_top=None):
     def make(data, bench):
         return st.stock_swing(data, bench, members, kind=kind, mom_top=mom_top)
@@ -319,6 +333,10 @@ def stock_candidates(members: pd.DataFrame) -> list[Candidate]:
         cs.append(Candidate(f"モメンタム12-1 上位{n}＋相場フィルター", "mom12-f", "stocks",
                             s_mom(members, n, market_filter=True), max_positions=n, params={"n": n},
                             desc=f"12-1 上位{n}。SPY が200日線より下の月末は全部売って現金"))
+    for n in (10, 20):
+        cs.append(Candidate(f"モメンタム6-1 上位{n}＋相場フィルター", "mom6-f", "stocks",
+                            s_mom_filtered(members, n, 126), max_positions=n, params={"n": n},
+                            desc=f"6-1 上位{n}。SPY が200日線より下の月末は全部売って現金"))
     cs.append(Candidate("55日ブレイクアウト（5銘柄）", "breakout", "stocks", s_swing(members, "breakout55"),
                         max_positions=5, stop_loss=0.10, desc="55日高値更新で買い、20日安値割れで売り"))
     cs.append(Candidate("20日ブレイクアウト（5銘柄）", "breakout", "stocks", s_swing(members, "breakout20"),
