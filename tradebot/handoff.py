@@ -69,18 +69,44 @@ def target_voltarget(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -
     return "UPRO" if vol < lo else "SSO" if vol < hi else "SPYM"
 
 
-# B・B′ の持ち方（改良49）: SSO・SPYM に乗り換えず、UPRO と BIL の比率で同じ倍率にする。
-# 倍率を下げるときは UPRO の一部を売るだけなので、確定する利益（税金）と売買が減り、
-# 実物の ETF（2010〜2026）で B は年 +1.1、B′ は年 +0.4 ポイント良かった。
+# B・B′ の持ち方: SSO・SPYM に乗り換えず、UPRO と BIL の比率で持つ（改良49）。
+# 比率は3段階ではなく、値動きに合わせて連続的に決める（改良50）。
+# 旧版（3段階）の対応: UPRO→1、SSO→2/3、SPYM→1/3、BIL→0
 UPRO_SHARE = {"UPRO": 1.0, "SSO": 2 / 3, "SPYM": 1 / 3, "BIL": 0.0}
+K_B = 0.15  # B: UPRO の比率 = 15% ÷ 値動き（上限 100%）
+K_B_PRIME = 0.20  # B′（候補）
+BAND = 0.1  # 前回の比率からの変化がこれ未満なら、売買しない
 
 
-def target_weights(spy_close: pd.Series, lo: float = 0.15, hi: float = 0.25) -> dict[str, float]:
-    """B・B′ の目標の比率。target_voltarget の銘柄を、UPRO と BIL の比率に置き換える。
+def upro_share(spy_close: pd.Series, k: float = K_B, prev: float | None = None, band: float = BAND) -> float:
+    """B（連続版）の UPRO の比率（0〜1、残りは BIL）。
 
-    例: SSO（2倍）の月は {"UPRO": 2/3, "BIL": 1/3}、逃げるときは {"UPRO": 0, "BIL": 1}。
+    1. 200日線の判定（trend_on）が「逃げる」なら 0
+    2. 「持つ」なら min(1, k ÷ 値動き)。値動きは前の月の最終営業日までの直近20営業日の
+       日次リターンの標準偏差 × √252（target_voltarget と同じ）。月の途中では変わらない
+    3. prev（今の目標の比率）があり、どちらも 0 でなく、差が band 未満なら prev のまま（小さな売買をしない）
     """
-    w = UPRO_SHARE[target_voltarget(spy_close, lo, hi)]
+    c = spy_close.dropna()
+    if not trend_on(c):
+        return 0.0
+    last = c.index[-1]
+    prev_month = c.loc[c.index.to_period("M") < last.to_period("M")]
+    if len(prev_month) < VOL_N + 1:
+        raise ValueError("前月末までに21営業日以上の終値が必要")
+    vol = float(prev_month.pct_change().iloc[-VOL_N:].std() * np.sqrt(252))
+    raw = min(1.0, k / vol)
+    if prev is not None and prev > 0 and abs(raw - prev) < band:
+        return prev
+    return raw
+
+
+def target_weights(spy_close: pd.Series, k: float = K_B, prev: float | None = None,
+                   band: float = BAND) -> dict[str, float]:
+    """B（連続版）の目標の比率 {"UPRO": w, "BIL": 1 - w}。prev は今の目標の UPRO の比率（初回は None）。
+
+    比率が前回の目標から変わった日だけ plan_rebalance で差の分を売買する。
+    """
+    w = upro_share(spy_close, k, prev, band)
     return {"UPRO": w, "BIL": 1.0 - w}
 
 

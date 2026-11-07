@@ -11,7 +11,7 @@ moomoo 証券で動かすトレード bot の検証と、厳選した bot の仕
 | `docs/HANDOFF_MUSE.md` | 仕様書（結論、選び方、bot ごとのルール、税金、本番の注意） |
 | `docs/MUSE_BRIEF.md` | Muse への依頼文 |
 | `docs/MANUAL.md` | 手で回すときの手順 |
-| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、48項目、冒頭に目次） |
+| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、50項目、冒頭に目次） |
 | `reports/zoo.md` | 全候補の評価表 |
 | `reports/outlook.md` | 10年運用したときの成績の幅 |
 | [検証ダッシュボード](https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN) | 主な結果のグラフ（開くには共有が必要） |
@@ -24,6 +24,7 @@ python scripts/signal_today.py          # 今日の判定（A・B・C、--moment
 python scripts/run_zoo.py               # 全候補の評価（元本 $2,000、reports/zoo.md）
 python scripts/run_outlook.py           # 10年運用の幅（reports/outlook.md）
 python scripts/run_contrib.py           # 毎月積み立てた場合（reports/contrib.md）
+python scripts/run_bweights.py          # B の持ち方の比較（reports/b_weights.md）
 python scripts/export_dashboard.py DIR  # ダッシュボード用の CSV
 python -m pytest                        # テスト
 ruff check tradebot scripts tests       # 静的解析
@@ -44,7 +45,8 @@ push のたびに、GitHub Actions でテストと静的解析が走る（`.gith
 |---|---|
 | `tradebot/handoff.py` | 引き継ぐ bot の売買判断（Muse が移植する参照実装） |
 | `tradebot/zoo.py` | 評価する候補の一覧と、そのシグナル |
-| `tradebot/backtest.py` | ポートフォリオ単位のバックテスト（手数料・税金・損失の繰り越し・損出し） |
+| `tradebot/backtest.py` | ポートフォリオ単位のバックテスト（手数料・税金・損失の繰り越し・損出し・積み立て） |
+| `tradebot/weights.py` | 複数の銘柄を比率で持つ型のバックテスト（B の持ち方） |
 | `tradebot/longhist.py` | 約100年分のデータ（米国株全体、短期国債、10年国債、CAPE）とレバレッジの合成 |
 | `tradebot/strategies.py` | 基本の戦略（移動平均、モメンタム、ブレイクアウトなど） |
 | `tradebot/data.py`、`tradebot/universe.py` | 日足の取得、S&P500 の各時点の構成銘柄 |

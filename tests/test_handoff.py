@@ -153,3 +153,28 @@ def test_switch_threshold_is_exact():
     nxt = down.index[-1] + pd.Timedelta(days=1)
     assert ho.trend_on(pd.concat([down, pd.Series([p * 1.0001], index=[nxt])]))
     assert not ho.trend_on(pd.concat([down, pd.Series([p * 0.9999], index=[nxt])]))
+
+
+def test_every_day_matches_zoo_for_continuous_b():
+    """B の連続版: 直近500営業日の毎日、前日の目標を引き継ぎながら判断し、検証の比率と一致する。"""
+    spy = load_or_skip("SPY")
+    close = spy["close"]
+    for k in (ho.K_B, ho.K_B_PRIME):
+        want = zoo.voltarget_share(close, k, ho.BAND)
+        days = spy.index[-500:]
+        prev = float(want.loc[:days[0]].iloc[-2])
+        for d in days:
+            got = ho.upro_share(close.loc[:d], k, prev)
+            assert got == pytest.approx(want.loc[d], abs=1e-12), d
+            prev = got
+
+
+def test_upro_share_ignores_small_changes():
+    idx = pd.bdate_range("2023-01-02", periods=400)
+    rng = np.random.default_rng(3)
+    c = pd.Series(100 * np.cumprod(1 + 0.002 + rng.normal(0, 0.015, 400)), index=idx)  # 上昇、値動き 約24%
+    raw = ho.upro_share(c)
+    assert 0 < raw < 1
+    assert ho.upro_share(c, prev=raw + 0.05) == raw + 0.05  # 差が 0.1 未満なら前の比率のまま
+    assert ho.upro_share(c, prev=raw + 0.15) == raw  # 0.1 以上なら変える
+    assert ho.upro_share(c, prev=0.0) == raw  # 逃げていた状態から戻るときは必ず変える

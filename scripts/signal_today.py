@@ -45,11 +45,8 @@ def distance_to_switch(close: pd.Series) -> str:
     return f"今は「逃げる」。次の営業日の SPY の終値が {p:.2f} を上回る（今より {(p / last - 1) * 100:.1f}% 上）と戻る"
 
 
-LEV_NAME = {"UPRO": "3倍", "SSO": "2倍", "SPYM": "1倍", "BIL": "逃げる"}
-
-
 def weights_text(w: dict[str, float]) -> str:
-    """{"UPRO": 2/3, "BIL": 1/3} → "UPRO 67% ＋ BIL 33%"（B・B′ の持ち方、改良49）。"""
+    """{"UPRO": 0.75, "BIL": 0.25} → "UPRO 75% ＋ BIL 25%"（B・B′ の持ち方、改良49・50）。"""
     return " ＋ ".join(f"{s} {v * 100:.0f}%" for s, v in w.items() if v > 0)
 
 
@@ -70,12 +67,11 @@ def main() -> None:
     print(f"A. SPY 3倍＋200日線        → {ho.target_lev3(spy)}")
     print(f"   {describe('SPY', spy)}")
     print(f"   {distance_to_switch(spy)}")
-    print(f"B. ボラ連動レバ＋200日線   → {weights_text(ho.target_weights(spy))}（{LEV_NAME[ho.target_voltarget(spy)]}）")
+    print(f"B. ボラ連動レバ＋200日線   → {weights_text(ho.target_weights(spy))}")
     print(f"   前月末（{prev.index[-1].date()}）の値動き 年率 {vol * 100:.1f}%"
-          "（15%未満 3倍＝UPRO 100%／25%未満 2倍＝UPRO 2/3／それ以上 1倍＝UPRO 1/3、残りは BIL）")
-    print(f"B′. 境目 20/35%（候補）   → {weights_text(ho.target_weights(spy, lo=0.20, hi=0.35))}")
-    print("   （20%未満 3倍／35%未満 2倍／それ以上 1倍）")
-    print("   B・B′ は比率が前回から変わった日だけ、差の分を売買する（handoff.plan_rebalance）")
+          f" → UPRO の比率 = 15% ÷ {vol * 100:.1f}%（上限 100%）、残りは BIL")
+    print(f"B′. 20% 版（候補）         → {weights_text(ho.target_weights(spy, k=ho.K_B_PRIME))}")
+    print("   今の目標の比率との差が 0.1 未満なら売買しない。変わるときは差の分だけ（handoff.plan_rebalance）")
     print(f"C. QQQ 3倍＋200日線（実験）→ {ho.target_tqqq(qqq)}")
     print(f"   {describe('QQQ', qqq)}")
 

@@ -474,6 +474,28 @@ def c_cape_lev(cape: pd.Series, lo_pct: float = 0.5, hi_pct: float = 0.8, window
     return make
 
 
+def voltarget_share(m: pd.Series, k: float = 0.15, band: float = 0.1, sma_n: int = 200, up: float = 0.01) -> pd.Series:
+    """B の連続版（改良50）: 日ごとの UPRO の比率（残りは BIL）。判定前は NaN。
+
+    - 200日線の判定（非対称の遊び、c_sma_asym と同じ）が「逃げる」なら 0
+    - 「持つ」なら min(1, k ÷ 前の月の最終営業日の20日の値動き)。月の途中では変えない
+    - 前回の比率から band 未満の変化は無視する（0 になる・0 から戻るときは必ず変える）
+    """
+    sm = ind.sma(m, sma_n)
+    state = pd.Series(np.where(m > sm * (1 + up), 1.0, np.where(m < sm, 0.0, np.nan)), index=m.index).ffill()
+    vol = realized_vol(m, 20).where(month_end(m.index)).ffill().shift(1)
+    raw = (k / vol).clip(upper=1.0).where(state == 1, 0.0).where(state.notna() & vol.notna())
+    out = np.full(len(raw), np.nan)
+    cur = np.nan
+    for i, x in enumerate(raw.to_numpy()):
+        if np.isnan(x):
+            continue
+        if np.isnan(cur) or x == 0 or cur == 0 or abs(x - cur) >= band:
+            cur = x
+        out[i] = cur
+    return pd.Series(out, index=m.index)
+
+
 def c_sma_asym(n: int = 200, lev: str = "L3", up: float = 0.01, down: float = 0.0, off: str = "CASH"):
     """非対称の遊び: 株が n 日線×(1−down) を割ったらすぐ逃げ、n 日線×(1+up) を超えたら戻る。
 

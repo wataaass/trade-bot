@@ -39,6 +39,7 @@ Claude 側の5枠は 11/7 に停止済み。口座に残っている Claude 枠�
 ## 更新点（追加）
 
 - **B・B′ の持ち方を変更（推奨）**: 倍率を下げるとき SSO・SPYM に乗り換えず、UPRO と BIL の比率で持つ（2倍の月は UPRO 2/3 ＋ BIL 1/3、1倍の月は UPRO 1/3 ＋ BIL 2/3）。目標の比率が変わった日だけ差の分を売買する。全部売り替えないので税金と売買が減り、税引き後で B は年 +1.0、B′ は年 +0.4 ポイント（実物の ETF、2010〜）。参照実装は `handoff.target_weights` と `handoff.plan_rebalance`、詳しくは仕様書の3章 B と `reports/improvements.md` の49.
+- **B・B′ の比率を連続的に決める（改良50）**: UPRO の比率 = min(1, 15% ÷ 前月末の20日の値動き)、残り BIL（B′ は 20%）。前回の目標から 0.1 未満の変化は無視。8つの時代すべてで3段階の版を上回った（B は下落がやや深くなる期間あり）。参照実装は `handoff.upro_share(spy, k, prev)` と `handoff.target_weights`。詳しくは仕様書3章 B、`reports/b_weights.md`
 - 使う銘柄は A・B・B′ とも UPRO と BIL の2つだけになる
 - 毎月積み立てても、持ち続けに対する優位は変わらない（`reports/improvements.md` の48.）
 - moomoo の米国株の取引手数料（0.132%、上限 $22）は公式ページで確認した。検証の前提と同じ

@@ -50,7 +50,7 @@ def test_target_weights_follow_voltarget():
     idx = pd.bdate_range("2023-01-02", periods=400)
     c = pd.Series(100 * 1.001 ** np.arange(400), index=idx)  # 値動きのない上昇 → UPRO
     assert ho.target_voltarget(c) == "UPRO"
-    assert ho.target_weights(c) == {"UPRO": 1.0, "BIL": 0.0}
+    assert ho.target_weights(c) == {"UPRO": 1.0, "BIL": 0.0}  # 値動きが小さいので上限の 100%
     down = pd.concat([c, pd.Series(c.iloc[-1] * 0.97 ** np.arange(1, 30), index=pd.bdate_range(idx[-1], periods=30)[1:])])
     assert ho.target_weights(down) == {"UPRO": 0.0, "BIL": 1.0}
 
