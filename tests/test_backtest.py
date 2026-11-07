@@ -115,7 +115,7 @@ def test_cannot_afford_one_share_skips_entry():
 def test_symbol_without_data_yet_is_skipped():
     a = make_df([10] * 10)
     b = make_df([20] * 5, start=str(a.index[5].date()))  # 途中から上場
-    sb = sig(b, entry_days=[0]).reindex(a.index, fill_value=False)
+    sb = sig(b, entry_days=[0]).astype(object).reindex(a.index, fill_value=False)
     sb["score"] = 0.0
     sb.iloc[0, 0] = True  # 上場前の日に買いシグナル
     cfg = bt.Config(initial_cash=1000, max_positions=1, fractional=True, costs=NO_COST)

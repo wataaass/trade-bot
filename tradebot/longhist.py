@@ -48,7 +48,7 @@ def _shiller_dy() -> pd.Series:
     if not path.exists():
         r = requests.get(SHILLER_URL, headers=_HEADERS, timeout=60)
         r.raise_for_status()
-        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7)
+        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7, engine="calamine")
         x = x[pd.to_numeric(x["Date"], errors="coerce").notna()]
         x = x[pd.to_numeric(x["D"], errors="coerce").notna()]
         d = x["Date"].astype(float)
@@ -108,7 +108,7 @@ def _shiller_gs10() -> pd.Series:
     if not path.exists():
         r = requests.get(SHILLER_URL, headers=_HEADERS, timeout=60)
         r.raise_for_status()
-        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7)
+        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7, engine="calamine")
         x = x[pd.to_numeric(x["Date"], errors="coerce").notna()]
         x = x[pd.to_numeric(x["Rate GS10"], errors="coerce").notna()]
         d = x["Date"].astype(float)
@@ -147,7 +147,7 @@ def shiller_cape() -> pd.Series:
     if not path.exists():
         r = requests.get(SHILLER_URL, headers=_HEADERS, timeout=60)
         r.raise_for_status()
-        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7)
+        x = pd.read_excel(io.BytesIO(r.content), sheet_name="Data", skiprows=7, engine="calamine")
         x = x[pd.to_numeric(x["Date"], errors="coerce").notna()]
         x = x[pd.to_numeric(x["CAPE"], errors="coerce").notna()]
         d = x["Date"].astype(float)
