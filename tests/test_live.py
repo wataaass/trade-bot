@@ -69,7 +69,6 @@ def test_last_month_end():
 
 def test_momentum_ranking_uses_12_1_and_membership():
     idx = pd.bdate_range("2025-01-01", periods=300)
-    rng = np.random.default_rng(0)
     data = {
         "AAPL": pd.DataFrame({"close": np.linspace(100, 200, 300)}, index=idx),  # 加盟中、上昇
         "MSFT": pd.DataFrame({"close": np.linspace(100, 120, 300)}, index=idx),  # 加盟中、小幅上昇

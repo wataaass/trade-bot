@@ -50,10 +50,14 @@ def test_momentum_6_1_ranks_by_skip_month_return():
 def test_trend_on_keeps_state_inside_band():
     idx = pd.bdate_range("2024-01-01", periods=260)
     base = np.full(260, 100.0)
-    above = base.copy(); above[-10:] = 103.0   # 線の3%上 → 持つ
-    inside = above.copy(); inside[-3:] = 100.6  # その後、線の+0.6%（遊びの中）→ 持つを続ける
-    below = base.copy(); below[-10:] = 99.0     # 線の下 → 逃げる
-    back = below.copy(); back[-3:] = 100.6      # 線の+0.6%に戻っただけ → 逃げたまま
+    above = base.copy()
+    above[-10:] = 103.0  # 線の3%上 → 持つ
+    inside = above.copy()
+    inside[-3:] = 100.6  # その後、線の+0.6%（遊びの中）→ 持つを続ける
+    below = base.copy()
+    below[-10:] = 99.0  # 線の下 → 逃げる
+    back = below.copy()
+    back[-3:] = 100.6  # 線の+0.6%に戻っただけ → 逃げたまま
     assert ho.trend_on(pd.Series(above, index=idx))
     assert ho.trend_on(pd.Series(inside, index=idx))
     assert not ho.trend_on(pd.Series(below, index=idx))

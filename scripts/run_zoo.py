@@ -19,7 +19,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from tradebot import backtest as bt  # noqa: E402
@@ -114,7 +113,7 @@ def evaluate(i: int) -> dict:
     sig = c.make(DATA, BENCH)
     sig = {s: f for s, f in sig.items() if s in data}
     out = {"name": c.name, "family": c.family, "universe": c.universe, "desc": c.desc}
-    for tlabel, tax in (("pre", None), ("tax", bt.TAXABLE)):
+    for _label, tax in (("pre", None), ("tax", bt.TAXABLE)):
         cfg = bt.Config(initial_cash=INITIAL_CASH, fractional=True, max_positions=c.max_positions,
                         stop_loss=c.stop_loss, max_hold_days=c.max_hold_days, tax=tax)
         res = bt.run(data, sig, cfg, u["start"], u["end"])

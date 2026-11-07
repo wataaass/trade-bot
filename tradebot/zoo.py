@@ -15,7 +15,6 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from . import backtest as bt
 from . import indicators as ind
 from . import strategies as st
 

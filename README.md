@@ -19,6 +19,7 @@ moomoo 証券で動かすスイングトレード bot。検証 → ペーパー�
 pip install -e ".[dev]"
 python scripts/run_backtest.py   # 結果は reports/backtest.md
 python -m pytest
+ruff check tradebot scripts tests
 ```
 
 - 過去データ: Yahoo Finance の調整済み日足（`data/` にキャッシュ、コミットしない）
