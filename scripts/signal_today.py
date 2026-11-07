@@ -48,7 +48,7 @@ def main() -> None:
     prev = spy.loc[spy.index.to_period("M") < spy.index[-1].to_period("M")]
     vol = float(prev.pct_change().iloc[-20:].std() * np.sqrt(252))
 
-    print(f"判定日: {asof} の終値（翌営業日の寄り付きで発注）")
+    print(f"判定日: {asof} の終値（翌営業日の引け間際、NY 15:45〜15:55 に成行で発注）")
     print()
     print(f"A. SPY 3倍＋200日線        → {ho.target_lev3(spy)}")
     print(f"   {describe('SPY', spy)}")
