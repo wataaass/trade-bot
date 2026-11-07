@@ -87,3 +87,15 @@ def test_370_bars_are_enough():
         past = close.loc[:d]
         assert ho.trend_on(past.iloc[-370:]) == ho.trend_on(past), d
         assert ho.target_voltarget(past.iloc[-370:]) == ho.target_voltarget(past), d
+
+
+def test_closes_from_moomoo_feeds_handoff():
+    spy = dt.load("SPY")["close"].iloc[-370:]
+    # moomoo の返り値の形（新しい順に並ぶこともある）を再現する
+    kl = [{"date": int(d.strftime("%Y%m%d")), "close": float(v), "open": 0} for d, v in spy.items()][::-1]
+    s = ho.closes_from_moomoo(kl)
+    assert s.index.is_monotonic_increasing and len(s) == 370
+    assert ho.target_lev3(s) == ho.target_lev3(spy)
+    assert ho.target_voltarget(s) == ho.target_voltarget(spy)
+    with pytest.raises(ValueError):
+        ho.closes_from_moomoo([])

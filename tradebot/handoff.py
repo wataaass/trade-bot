@@ -87,3 +87,17 @@ def momentum_6_1(closes: pd.DataFrame, members: list[str], top_n: int = 10) -> l
     score = c.iloc[-22] / c.iloc[-127] - 1
     score = score[c.iloc[-1].notna() & score.notna()]
     return list(score.sort_values(ascending=False, kind="stable").index[:top_n])
+
+
+def closes_from_moomoo(kline_list: list[dict]) -> pd.Series:
+    """moomoo の履歴K線（quote_history_kline の data.kline_list）を、判断関数に渡せる終値の系列にする。
+
+    各行の `date`（例: 20261106）と `close` を使う。`autype=1`（前方調整）で取得したものを渡すこと。
+    日付の重複は後のものを残し、古い順に並べる。
+    """
+    if not kline_list:
+        raise ValueError("K線が空")
+    idx = pd.to_datetime([str(r["date"]) for r in kline_list], format="%Y%m%d")
+    s = pd.Series([float(r["close"]) for r in kline_list], index=idx, name="close")
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    return s
