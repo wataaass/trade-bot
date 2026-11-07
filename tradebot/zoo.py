@@ -527,3 +527,17 @@ def c_rate_lev(up: float = 0.01, rate_hi: float = 0.04, hi_lev: str = "L2", lo_l
         tgt = lev.where(on == 1, "CASH").where(sm.notna() & lev.notna() & on.notna())
         return targets_to_signals(tgt, pd.Series(True, index=idx), sorted({hi_lev, lo_lev, "CASH"}))
     return make
+
+
+def check_weekly(signals: dict, idx: pd.DatetimeIndex) -> dict:
+    """毎日判定のシグナルを、週の最終営業日だけ判定する形に変える（他の日は何もしない）。"""
+    wk = pd.Series(idx.to_period("W-FRI"), index=idx)
+    last_of_week = (wk != wk.shift(-1)).to_numpy()
+    out = {}
+    for s, f in signals.items():
+        g = f.copy()
+        mask = pd.Series(last_of_week, index=idx).reindex(g.index).fillna(False).astype(bool)
+        g["entry"] = g["entry"] & mask
+        g["exit"] = g["exit"] & mask
+        out[s] = g
+    return out
