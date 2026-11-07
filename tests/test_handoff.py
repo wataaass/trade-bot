@@ -107,3 +107,15 @@ def test_closes_from_moomoo_feeds_handoff():
     assert ho.target_voltarget(s) == ho.target_voltarget(spy)
     with pytest.raises(ValueError):
         ho.closes_from_moomoo([])
+
+
+def test_every_day_matches_zoo_for_b_prime():
+    """B′（境目 20/35%）も、直近500営業日の毎日で検証の判断と一致する。"""
+    spy = load_or_skip("SPY")
+    data = {"MKT": spy, "L2": spy, "L3": spy, "CASH": spy}
+    sig = zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01)(data, spy)
+    name = {"L3": "UPRO", "L2": "SSO", "MKT": "SPYM", "CASH": "BIL"}
+    close = spy["close"]
+    for d in spy.index[-500:]:
+        want = [name[k] for k in ("L3", "L2", "MKT", "CASH") if sig[k]["entry"].loc[d]]
+        assert [ho.target_voltarget(close.loc[:d], lo=0.20, hi=0.35)] == want, d
