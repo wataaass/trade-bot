@@ -541,3 +541,14 @@ def check_weekly(signals: dict, idx: pd.DatetimeIndex) -> dict:
         g["exit"] = g["exit"] & mask
         out[s] = g
     return out
+
+
+def c_fast_reentry(exit_n: int = 200, entry_n: int = 100, lev: str = "L3", up: float = 0.01, off: str = "CASH"):
+    """逃げるのは exit_n 日線割れ、戻るのは短い entry_n 日線の (1+up) 倍を超えたとき。V字回復に早く乗るため。"""
+    def make(data, bench):
+        m = data["MKT"]["close"]
+        se, sn = ind.sma(m, exit_n), ind.sma(m, entry_n)
+        on = pd.Series(np.where(m < se, 0.0, np.where(m > sn * (1 + up), 1.0, np.nan)), index=m.index).ffill()
+        tgt = pd.Series(np.where(on == 1, lev, off), index=m.index).where(se.notna() & on.notna())
+        return targets_to_signals(tgt, pd.Series(True, index=m.index), [lev, off])
+    return make
