@@ -110,3 +110,16 @@ def test_contribution_with_weights_buys_by_target():
     # 費用・税金なしなら、積み立てを含めた年率は A（年 約10%）と B（0%）の間
     irr = bt.money_weighted_return(res, 1000)
     assert 0.0 < irr < 0.11
+
+
+def test_withholding_matches_single_position_engine():
+    data = _two_assets(seed=7)
+    idx = data["A"].index
+    hold_a = pd.Series((np.arange(len(idx)) // 45) % 2 == 0, index=idx)
+    sig = {"A": pd.DataFrame({"entry": hold_a, "exit": ~hold_a, "score": 0.0}),
+           "B": pd.DataFrame({"entry": ~hold_a, "exit": hold_a, "score": 0.0})}
+    cfg = bt.Config(initial_cash=2000, fractional=True, max_positions=1, tax=bt.Tax(withhold=True))
+    r1 = bt.run(data, sig, cfg)
+    r2 = wt.run_weights(data, pd.DataFrame({"A": hold_a.astype(float), "B": (~hold_a).astype(float)}), cfg)
+    assert r2.equity.iloc[-1] == pytest.approx(r1.equity.iloc[-1], rel=1e-6)
+    assert r2.tax_paid == pytest.approx(r1.tax_paid, rel=1e-6)

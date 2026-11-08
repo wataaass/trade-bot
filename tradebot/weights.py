@@ -47,6 +47,7 @@ def run_weights(
     basis = np.zeros(n)  # 取得価額の合計（手数料込み）
     cash = cfg.initial_cash
     realized: dict[int, float] = {}
+    withheld: dict[int, float] = {}
     carry: list[list] = []
     tax_paid = 0.0
     turnover = 0.0
@@ -64,6 +65,7 @@ def run_weights(
         fee = costs.commission(notional)
         part = basis[j] * qty / shares[j]
         realized[year] = realized.get(year, 0.0) + notional - fee - part
+        withhold(year)
         basis[j] -= part
         shares[j] -= qty
         cash += notional - fee
@@ -83,11 +85,25 @@ def run_weights(
         basis[j] += notional + fee
         turnover += notional
 
+    def withhold(year: int) -> None:
+        """源泉徴収: その年の通算の利益に対する税金と、すでに引いた額との差を、今の現金から引く（戻す）。"""
+        nonlocal cash, tax_paid
+        if tax is None or not tax.withhold:
+            return
+        due = max(0.0, realized.get(year, 0.0)) * tax.capital_gains
+        delta = due - withheld.get(year, 0.0)
+        cash -= delta
+        tax_paid += delta
+        withheld[year] = due
+
     def settle(year: int) -> None:
         nonlocal cash, tax_paid
         pnl = realized.pop(year, 0.0)
         if tax is None:
             return
+        back = withheld.pop(year, 0.0)
+        cash += back
+        tax_paid -= back
         carry[:] = [x for x in carry if x[0] >= year - tax.loss_carry_years]
         if pnl < 0:
             carry.append([year, -pnl])
@@ -118,6 +134,7 @@ def run_weights(
                 basis[j] -= part
                 shares[j] *= 1 - f
         cash += f * value
+        withhold(year)
 
     contrib: dict[pd.Timestamp, float] = {}
     for i, day in enumerate(dates):
@@ -142,6 +159,8 @@ def run_weights(
                     qty = shares[j] if pending[j] == 0 else (have[j] - want[j]) / px[j]
                     sell(j, min(qty, shares[j]), px[j], day.year)
             have = shares * px
+            # 売りで税金が引かれた（戻った）分も含めて、総額を見積もり直す
+            want = pending * (cash + float(np.nansum(have)))
             short = np.clip(want - have, 0, None)
             if short.sum() > 0:
                 scale = min(1.0, max(cash, 0.0) / short.sum())
