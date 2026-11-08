@@ -170,13 +170,20 @@ def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict
     return orders
 
 
+TAX_RATE = 0.20315  # 特定口座の売買益の税率（源泉徴収あり）
+
+
 def plan_rebalance(holdings: dict[str, int], cash: float, weights: dict[str, float], prices: dict[str, float],
-                   keep_cash: float = 0.01) -> list[dict]:
+                   keep_cash: float = 0.01, basis: dict[str, float] | None = None,
+                   tax_rate: float = TAX_RATE) -> list[dict]:
     """目標の比率（target_weights）に合わせる注文を作る。差の分だけ売買し、売りが先。
 
     呼ぶのは、目標の比率が前回合わせたときから変わった日だけ（変わっていなければ呼ばない。
     値動きで比率がずれても直さない。検証はその前提）。
     holdings・cash・prices・keep_cash の意味は plan_switch と同じ。
+    basis: 銘柄ごとの1株あたりの取得単価（移動平均）。渡すと、源泉徴収ありの口座で売りの利益から
+      引かれる税金（利益 × tax_rate）を見込んで、買いの量をその分減らす（買付余力が足りずに買いが通らないのを防ぐ）。
+      その年に損が出ていて実際には引かれない場合は、少し現金が余るだけ（次に目標が変わる日に使われる）。
     """
     total = cash + sum(q * prices[s] for s, q in holdings.items())
     investable = total * (1 - keep_cash)
@@ -193,6 +200,8 @@ def plan_rebalance(holdings: dict[str, int], cash: float, weights: dict[str, flo
             orders.append({"side": "SELL", "symbol": sym, "qty": int(sell)})
             after[sym] = qty - sell
             avail += sell * prices[sym]
+            if basis and sym in basis:
+                avail -= max(0.0, (prices[sym] - basis[sym]) * sell) * tax_rate
     spend = avail - keep_cash * total
     for sym, w in sorted(weights.items(), key=lambda kv: -kv[1]):
         if w <= 0:
@@ -236,7 +245,8 @@ def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> t
 
 def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: float,
                prices: dict[str, float], state: dict | None = None, keep_cash: float = 0.01,
-               deposit: float = 0.0, risk: str = "UPRO", safe: str = "BIL") -> tuple[list[dict], dict]:
+               deposit: float = 0.0, risk: str = "UPRO", safe: str = "BIL",
+               basis: dict[str, float] | None = None) -> tuple[list[dict], dict]:
     """1日分の手順をまとめたもの: 判定 → 目標が前回から変わったときだけ注文 → 次の日に引き継ぐ状態。
 
     bot: "A"、"B"、"B′"（"B'" でもよい）。spy_close: 確定した終値まで（closes_from_moomoo の返り値など）。
@@ -246,6 +256,7 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
       目標が変わる日は、入金分も含めた全体で比率を合わせる。
     risk・safe: 実際に売買する銘柄（例: safe="SGOV"、risk="SPXL"）。holdings と prices もこの名前で渡す。
       state の中身は銘柄を差し替えても {"UPRO": w, "BIL": 1 - w} のまま。
+    basis: 1株あたりの取得単価（plan_rebalance と同じ）。源泉徴収ありの口座では渡す。
     返り値: (注文のリスト（売りが先。目標が変わらない日は、入金がなければ空）, 新しい state)。
     注文は翌営業日の引け間際に成行で出す。約定しなかったときは state を更新せず、翌日もう一度呼ぶ。
     """
@@ -265,4 +276,4 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
         # 目標が変わらない日は、入金があればその額を目標の比率で買い足すだけ（ふだんは空）
         orders = plan_deposit(min(deposit, cash), trade_w, prices) if deposit > 0 else []
         return orders, {"target": target}
-    return plan_rebalance(holdings, cash, trade_w, prices, keep_cash), {"target": target}
+    return plan_rebalance(holdings, cash, trade_w, prices, keep_cash, basis), {"target": target}

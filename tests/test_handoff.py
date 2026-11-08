@@ -242,3 +242,18 @@ def test_daily_plan_with_other_symbols():
     orders, state = ho.daily_plan("A", down, {"SPXL": 11}, 20.0, p, state, risk="SPXL", safe="SGOV")
     assert orders[0] == {"side": "SELL", "symbol": "SPXL", "qty": 11}
     assert orders[1]["symbol"] == "SGOV" and state["target"]["UPRO"] == 0.0
+
+
+def test_plan_rebalance_leaves_room_for_withholding_tax():
+    p = {"UPRO": 128.0, "BIL": 91.5}
+    w = {"UPRO": 0.0, "BIL": 1.0}
+    plain = ho.plan_rebalance({"UPRO": 15}, 20.0, w, p)
+    taxed = ho.plan_rebalance({"UPRO": 15}, 20.0, w, p, basis={"UPRO": 64.0})
+    assert plain[1]["qty"] == 20
+    # 利益 (128-64)×15 = 960 の 20.315% ≒ 195 ドルが引かれるので、BIL は2株少なく買う
+    tax = 960 * ho.TAX_RATE
+    assert taxed[1]["qty"] == int((20 + 15 * 128 - tax - 0.01 * (20 + 15 * 128)) // 91.5)
+    cash_left = 20 + 15 * 128 - tax - taxed[1]["qty"] * 91.5
+    assert cash_left >= 0
+    # 損が出ている売りなら差し引かない
+    assert ho.plan_rebalance({"UPRO": 15}, 20.0, w, p, basis={"UPRO": 200.0}) == plain
