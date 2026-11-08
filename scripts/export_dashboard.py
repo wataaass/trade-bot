@@ -22,12 +22,20 @@ from scripts import run_zoo as rz  # noqa: E402
 from tradebot import backtest as bt  # noqa: E402
 from tradebot import data as dt  # noqa: E402
 from tradebot import longhist as lh  # noqa: E402
+from tradebot import weights as wt  # noqa: E402
 from tradebot import zoo  # noqa: E402
 
 A = lambda: zoo.c_sma_asym(200, "L3", 0.01)  # noqa: E731
-B = lambda: zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01)  # noqa: E731
-Bp = lambda: zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01)  # noqa: E731
-SA, SB = ["L3", "CASH"], ["MKT", "L2", "L3", "CASH"]
+SA = ["L3", "CASH"]
+B_NAME, BP_NAME = "B. ボラ連動レバ", "B′. ボラ連動 20%（候補）"
+
+
+def run_b(data, k, start, end, cash=2000, tax=bt.TAXABLE, **kw):
+    """B・B′（UPRO と BIL の比率を値動きに合わせて連続的に、改良49・50）。"""
+    w = zoo.voltarget_share(data["MKT"]["close"], k, 0.1)
+    cfg = bt.Config(initial_cash=cash, fractional=True, max_positions=1, tax=tax, **kw)
+    return wt.run_weights({"L3": data["L3"], "CASH": data["CASH"]}, pd.DataFrame({"L3": w, "CASH": 1 - w}),
+                          cfg, start, end)
 
 
 def run(data, sig, syms, start, end, cash=2000, tax=bt.TAXABLE, **kw):
@@ -49,13 +57,14 @@ def main(out: Path) -> None:
     U = rz.UNIVERSES["etf"]
     strats = [("SPY 持ち続け", zoo.c_hold("SPY")(D, b), ["SPY"]),
               ("A. SPY 3倍＋200日線", A()(D, b), SA),
-              ("B. ボラ連動レバ", B()(D, b), SB),
+              (B_NAME, 0.15, None),
               ("Muse 月末型 SMA250", zoo.e_trend("SPY", "IEF", 250, monthly=True)(D, b), ["SPY", "IEF"]),
               ("C. QQQ 3倍（実験）", c_make(D, b), ["QQQ3", "CASH"]),
-              ("B′. ボラ連動 20/35%（候補）", Bp()(D, b), SB)]
+              (BP_NAME, 0.20, None)]
     rows = []
     for name, sig, syms in strats:
-        res = run(D, sig, syms, U["start"], U["end"], cash=300_000, costs=bt.Costs(commission_max=22 * 150))
+        kw = dict(cash=300_000, costs=bt.Costs(commission_max=22 * 150))
+        res = run_b(D, sig, U["start"], U["end"], **kw) if syms is None else run(D, sig, syms, U["start"], U["end"], **kw)
         eq = res.equity.resample("ME").last()
         eq.iloc[-1] = res.equity.iloc[-1]
         rows += [{"month": d.strftime("%Y-%m"), "strategy": name, "value": round(v / 10000, 2)} for d, v in eq.items()]
@@ -66,13 +75,9 @@ def main(out: Path) -> None:
     rows = []
     for label, u, n in (("SPY 持ち続け", "etf", "SPY 持ち続け"),
                         ("A. SPY 3倍＋200日線", "etf", "SPY版 3倍 200日線・戻り+1%"),
-                        ("B. ボラ連動レバ", "etf", "SPY版 ボラ連動レバ月次＋200日線（15/25%）・戻り+1%"),
                         ("C. QQQ 3倍（実験）", "etf", "QQQ 3倍⇄CASH 200日線・毎日"),
-                        ("B′. ボラ連動 20/35%（候補）", "etf", "SPY版 ボラ連動レバ月次＋200日線（20/35%）・戻り+1%"),
                         ("持ち続け", "century", "1倍 持ち続け"),
                         ("A. SPY 3倍＋200日線", "century", "3倍 200日線・戻り+1%"),
-                        ("B. ボラ連動レバ", "century", "ボラ連動レバ月次＋200日線（15/25%）・戻り+1%"),
-                        ("B′. ボラ連動 20/35%（候補）", "century", "ボラ連動レバ月次＋200日線（20/35%）・戻り+1%"),
                         ("SPY 持ち続け", "stocks", "SPY 持ち続け"),
                         ("D. 個別株モメンタム（実験）", "stocks", "モメンタム6-1 上位10")):
         data = {"etf": "ETF 2003〜2026", "century": "米国株全体 1927〜2026", "stocks": "S&P500 個別株 1997〜2026"}[u]
@@ -83,22 +88,34 @@ def main(out: Path) -> None:
     yrs = (res.equity.index[-1] - res.equity.index[0]).days / 365.25
     rows.insert(3, {"strategy": "Muse 月末型 SMA250", "data": "ETF 2003〜2026", "cagr": round(m["CAGR"], 4),
                     "maxdd": round(m["MaxDD"], 4), "trades": round(m["Trades"] / yrs, 1)})
+    C, bc, _ = rz.load_universe("century")
+    for data, label, start, end in ((D, "ETF 2003〜2026", U["start"], U["end"]),
+                                    (C, "米国株全体 1927〜2026", "1927-06-01", None)):
+        for name, k in ((B_NAME, 0.15), (BP_NAME, 0.20)):
+            res = run_b(data, k, start, end)
+            m = bt.metrics(res.equity)
+            yrs = (res.equity.index[-1] - res.equity.index[0]).days / 365.25
+            w = zoo.voltarget_share(data["MKT"]["close"], k, 0.1).loc[res.equity.index]
+            rows.append({"strategy": name, "data": label, "cagr": round(m["CAGR"], 4), "maxdd": round(m["MaxDD"], 4),
+                         "trades": round(float((w.diff().abs() > 1e-12).sum()) / yrs, 1)})
     pd.DataFrame(rows).to_csv(out / "summary.csv", index=False)
 
     rows = []
     for name, make, syms in (("SPY 持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A. SPY 3倍＋200日線", A(), SA),
-                             ("B. ボラ連動レバ", B(), SB)):
-        sig = make(D, b)
+                             (B_NAME, 0.15, None)):
+        sig = make if syms is None else make(D, b)
         for fee in (0.0, 0.0005, 0.001, 0.00132, 0.0015, 0.002):
-            res = run(D, sig, syms, U["start"], U["end"], costs=bt.Costs(commission_rate=fee))
+            costs = bt.Costs(commission_rate=fee)
+            res = (run_b(D, sig, U["start"], U["end"], costs=costs) if syms is None
+                   else run(D, sig, syms, U["start"], U["end"], costs=costs))
             rows.append({"fee": fee, "strategy": name, "cagr": round(bt.metrics(res.equity)["CAGR"], 4)})
     pd.DataFrame(rows).to_csv(out / "fees.csv", index=False)
 
-    C, bc, _ = rz.load_universe("century")
     curves = {}
-    for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A. SPY 3倍＋200日線", A(), SA),
-                             ("B. ボラ連動レバ", B(), SB), ("B′. ボラ連動 20/35%（候補）", Bp(), SB)):
+    for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A. SPY 3倍＋200日線", A(), SA)):
         curves[name] = run(C, make(C, bc), syms, "1927-06-01", None, cash=1.0, tax=None).equity
+    for name, k in ((B_NAME, 0.15), (BP_NAME, 0.20)):
+        curves[name] = run_b(C, k, "1927-06-01", None, cash=1.0, tax=None).equity
     eq = pd.DataFrame(curves)
     n = 252 * 10
     roll = ((eq.shift(-n) / eq) ** 0.1 - 1).dropna()
@@ -120,7 +137,7 @@ def main(out: Path) -> None:
         sel = bucket == bk
         rows.append({"rate": bk, "years": int(sel.sum()), "hold": round(yr.loc[sel, "持ち続け"].mean(), 4),
                      "a_excess": round((yr.loc[sel, "A. SPY 3倍＋200日線"] - yr.loc[sel, "持ち続け"]).mean(), 4),
-                     "b_excess": round((yr.loc[sel, "B. ボラ連動レバ"] - yr.loc[sel, "持ち続け"]).mean(), 4)})
+                     "b_excess": round((yr.loc[sel, B_NAME] - yr.loc[sel, "持ち続け"]).mean(), 4)})
     pd.DataFrame(rows).to_csv(out / "rates.csv", index=False)
 
     rows = []
@@ -131,8 +148,9 @@ def main(out: Path) -> None:
         c = rz.cash_series(x.index)
         DD = {"MKT": x, "CASH": c, "L2": lh.leveraged(x, c, 2), "L3": lh.leveraged(x, c, 3)}
         r = {"country": label}
-        for key, make, syms in (("hold", zoo.c_hold("MKT"), ["MKT"]), ("a", A(), SA), ("b", B(), SB)):
+        for key, make, syms in (("hold", zoo.c_hold("MKT"), ["MKT"]), ("a", A(), SA)):
             r[key] = round(bt.metrics(run(DD, make(DD, x), syms, "1997-06-01", None).equity)["CAGR"], 4)
+        r["b"] = round(bt.metrics(run_b(DD, 0.15, "1997-06-01", None).equity)["CAGR"], 4)
         rows.append(r)
     pd.DataFrame(rows).to_csv(out / "countries.csv", index=False)
     # 約定のタイミング（実物の UPRO・SSO・BIL・SPY、2010〜2026）
@@ -151,10 +169,11 @@ def main(out: Path) -> None:
         return d.dropna(subset=["open"])
 
     rows = []
-    for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A", A(), SA), ("B", B(), SB)):
-        sig = make(real, None)
+    for name, make, syms in (("持ち続け", zoo.c_hold("MKT"), ["MKT"]), ("A", A(), SA), ("B", 0.15, None)):
         for label, tf in (("当日の終値", same_close), ("翌日の始値", lambda d: d), ("翌日の終値", next_close)):
-            res = run({k: tf(real[k]) for k in syms}, sig, syms, "2010-01-01", None)
+            dd = {k: tf(v) for k, v in real.items()}
+            res = (run_b(dd, make, "2010-01-01", None) if syms is None
+                   else run({k: dd[k] for k in syms}, make(real, None), syms, "2010-01-01", None))
             rows.append({"strategy": name, "timing": label, "cagr": round(bt.metrics(res.equity)["CAGR"], 4)})
     pd.DataFrame(rows).to_csv(out / "timing.csv", index=False)
     print("書き出した:", ", ".join(sorted(p.name for p in out.glob("*.csv"))))
