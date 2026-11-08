@@ -178,3 +178,37 @@ def test_upro_share_ignores_small_changes():
     assert ho.upro_share(c, prev=raw + 0.05) == raw + 0.05  # 差が 0.1 未満なら前の比率のまま
     assert ho.upro_share(c, prev=raw + 0.15) == raw  # 0.1 以上なら変える
     assert ho.upro_share(c, prev=0.0) == raw  # 逃げていた状態から戻るときは必ず変える
+
+
+def test_daily_plan_follows_targets_and_trades_only_on_changes():
+    """直近500営業日、daily_plan の注文を約定させ続けると、持ち株の比率が検証の目標に沿い、
+    注文が出るのは目標が変わった日（と初日）だけになる。"""
+    spy = load_or_skip("SPY")
+    close = spy["close"]
+    days = spy.index[-500:]
+    upro = 100 * (close / close.iloc[0]) ** 3  # 値段の目安（約定の計算用）
+    bil = pd.Series(91.5, index=close.index)
+    for bot, k in (("A", None), ("B", ho.K_B), ("B′", ho.K_B_PRIME)):
+        if k is None:
+            sig = zoo.c_sma_asym(200, "L3", 0.01)({"MKT": spy}, spy)
+            want = sig["L3"]["entry"].astype(float)
+        else:
+            want = zoo.voltarget_share(close, k, ho.BAND)
+        holdings, cash, state, n_orders = {}, 2000.0, None, 0
+        for d in days:
+            p = {"UPRO": float(upro.loc[d]), "BIL": float(bil.loc[d])}
+            orders, state = ho.daily_plan(bot, close.loc[:d], holdings, cash, p, state)
+            assert state["target"]["UPRO"] == pytest.approx(want.loc[d], abs=1e-12), (bot, d)
+            if orders:
+                n_orders += 1
+            for o in orders:  # 同じ値段で約定したことにする
+                q = o["qty"] if o["side"] == "BUY" else -o["qty"]
+                holdings[o["symbol"]] = holdings.get(o["symbol"], 0) + q
+                cash -= q * p[o["symbol"]]
+            assert cash >= 0 and all(q >= 0 for q in holdings.values())
+            value = cash + sum(q * p[s] for s, q in holdings.items())
+            if orders:  # 注文した日は、比率が目標に1株分ほどの誤差で合う
+                got = holdings.get("UPRO", 0) * p["UPRO"] / value
+                assert abs(got - state["target"]["UPRO"]) <= p["UPRO"] / value + 0.02, (bot, d)
+        changes = int((want.loc[days].diff().abs() > 1e-12).sum())
+        assert n_orders <= changes + 1, bot

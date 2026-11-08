@@ -3,6 +3,7 @@
 どれも「最後に確定した日の終値まで」の価格だけを使い、その日に持つべき銘柄を返す純粋な関数。
 価格は配当・分割調整済みの終値（moomoo の履歴K線なら autype=1 前方調整、Yahoo なら Adj Close）を使う。
 検証（tradebot/zoo.py）と同じ判断になることを tests/test_handoff.py で確かめている。
+毎日の手順をまとめたものは daily_plan（判定・注文・次の日に引き継ぐ状態）。
 """
 
 from __future__ import annotations
@@ -217,3 +218,29 @@ def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> t
         return "exit", s / (n - 1)
     k = 1 + up
     return "reentry", k * s / (n - k)
+
+
+def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: float,
+               prices: dict[str, float], state: dict | None = None, keep_cash: float = 0.01) -> tuple[list[dict], dict]:
+    """1日分の手順をまとめたもの: 判定 → 目標が前回から変わったときだけ注文 → 次の日に引き継ぐ状態。
+
+    bot: "A"、"B"、"B′"（"B'" でもよい）。spy_close: 確定した終値まで（closes_from_moomoo の返り値など）。
+    holdings・cash・prices: この枠の持ち株・現金・直近の値段（plan_switch と同じ）。
+    state: 前の日の返り値の state（初日は None）。中身は {"target": {"UPRO": w, "BIL": 1 - w}}。
+    返り値: (注文のリスト（売りが先、変わらない日は空）, 新しい state)。
+    注文は翌営業日の引け間際に成行で出す。約定しなかったときは state を更新せず、翌日もう一度呼ぶ。
+    """
+    prev = (state or {}).get("target")
+    if bot == "A":
+        w = 1.0 if trend_on(spy_close) else 0.0
+        target = {"UPRO": w, "BIL": 1.0 - w}
+    elif bot in ("B", "B′", "B'"):
+        k = K_B if bot == "B" else K_B_PRIME
+        target = target_weights(spy_close, k, None if prev is None else prev["UPRO"])
+    else:
+        raise ValueError(f"未知の bot: {bot}")
+    unchanged = prev is not None and abs(prev["UPRO"] - target["UPRO"]) < 1e-12
+    held = {s: q for s, q in holdings.items() if q > 0}
+    if unchanged and held:
+        return [], {"target": target}
+    return plan_rebalance(holdings, cash, target, prices, keep_cash), {"target": target}
