@@ -146,7 +146,8 @@ def closes_from_moomoo(kline_list: list[dict]) -> pd.Series:
 
 
 def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict[str, float],
-                keep_cash: float = 0.01) -> list[dict]:
+                keep_cash: float = 0.01, basis: dict[str, float] | None = None,
+                tax_rate: float = 0.20315) -> list[dict]:
     """持つべき銘柄（target）に乗り換えるための注文を作る。
 
     holdings: この枠で今持っている銘柄と株数（例 {"UPRO": 15}）。cash: この枠の現金（ドル）。
@@ -154,6 +155,8 @@ def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict
     keep_cash: 約定のずれに備えて残す現金の割合（既定 1%）。
     返り値は [{"side": "SELL"|"BUY", "symbol": ..., "qty": ...}] で、売りが先。
     target を既に持っていて他に何も持っていなければ、空のリスト（何もしない）。
+    basis: 1株あたりの取得単価。渡すと、源泉徴収ありの口座で売りの利益から引かれる税金を見込んで、
+      買いの量を減らす（plan_rebalance と同じ。全部売り替えるので、含み益が大きいと税金が1%の余裕を超える）。
     """
     orders: list[dict] = []
     proceeds = 0.0
@@ -161,6 +164,8 @@ def plan_switch(holdings: dict[str, int], cash: float, target: str, prices: dict
         if sym != target and qty > 0:
             orders.append({"side": "SELL", "symbol": sym, "qty": int(qty)})
             proceeds += qty * prices[sym]
+            if basis and sym in basis:
+                proceeds -= max(0.0, (prices[sym] - basis[sym]) * qty) * tax_rate
     if not orders and holdings.get(target, 0) > 0:
         return []
     budget = (cash + proceeds) * (1 - keep_cash)

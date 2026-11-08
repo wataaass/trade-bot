@@ -295,3 +295,12 @@ def test_plan_gain_harvest():
     assert orders == [{"side": "SELL", "symbol": "UPRO", "qty": 17}, {"side": "BUY", "symbol": "UPRO", "qty": 17}]
     assert ho.plan_gain_harvest(300.0, {"UPRO": 20}, {"UPRO": 100.0}, p) == []  # 利益の年は何もしない
     assert ho.plan_gain_harvest(-300.0, {"UPRO": 20}, {"UPRO": 150.0}, p) == []  # 含み益がなければ何もしない
+
+
+def test_plan_switch_leaves_room_for_withholding_tax():
+    p = {"UPRO": 128.0, "BIL": 91.5}
+    plain = ho.plan_switch({"UPRO": 15}, 20.0, "BIL", p)
+    taxed = ho.plan_switch({"UPRO": 15}, 20.0, "BIL", p, basis={"UPRO": 64.0})
+    assert taxed[1]["qty"] < plain[1]["qty"]
+    assert 20 + 15 * 128 - 960 * ho.TAX_RATE - taxed[1]["qty"] * 91.5 >= 0  # 税金を引いても買える
+    assert ho.plan_switch({"UPRO": 15}, 20.0, "BIL", p, basis={"UPRO": 200.0}) == plain  # 損なら差し引かない
