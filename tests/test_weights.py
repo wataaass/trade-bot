@@ -123,3 +123,24 @@ def test_withholding_matches_single_position_engine():
     r2 = wt.run_weights(data, pd.DataFrame({"A": hold_a.astype(float), "B": (~hold_a).astype(float)}), cfg)
     assert r2.equity.iloc[-1] == pytest.approx(r1.equity.iloc[-1], rel=1e-6)
     assert r2.tax_paid == pytest.approx(r1.tax_paid, rel=1e-6)
+
+
+def test_gain_harvest_offsets_loss_in_same_year():
+    # 2020年: B を -50 で売って損が確定、A には +100 の含み益。繰り越しなしだと、この損は年をまたぐと消える。
+    # 年末に益出しすれば、2020年の損と A の益が相殺され、2021年に A を売ったときの課税が減る
+    start = "2020-12-21"
+    idx = pd.bdate_range(start, periods=12)  # 2020-12-21〜2020-12-31 が9日、2021年が3日
+    a = _df([100, 100] + [120] * 10, start=start)
+    b = _df([100, 100] + [90] * 10, start=start)
+    c = _df([10.0] * 12, start=start)
+    wa = [0.5, 0.5] + [1.0] * 7 + [0.0] * 3
+    wb = [0.5, 0.5] + [0.0] * 10
+    w = pd.DataFrame({"A": wa, "B": wb}, index=idx)
+    w["C"] = 1 - w["A"] - w["B"]
+    no_cost = bt.Costs(commission_rate=0, slippage=0)
+    cfg = bt.Config(initial_cash=1000, fractional=True, costs=no_cost, tax=bt.Tax(loss_carry_years=0))
+    plain = wt.run_weights({"A": a, "B": b, "C": c}, w, cfg)
+    harvested = wt.run_weights({"A": a, "B": b, "C": c}, w, cfg, gain_harvest=True)
+    assert plain.tax_paid == pytest.approx(100 * 0.20315)  # 2021年の益 100 に全部課税
+    assert harvested.tax_paid == pytest.approx(50 * 0.20315)  # 2020年に 50 相殺済み
+    assert harvested.equity.iloc[-1] == pytest.approx(plain.equity.iloc[-1] + 50 * 0.20315)
