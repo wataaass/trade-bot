@@ -41,8 +41,10 @@ def distance_to_switch(close: pd.Series) -> str:
     kind, p = ho.switch_threshold(close)
     last = close.iloc[-1]
     if kind == "exit":
-        return f"今は「持つ」。次の営業日の SPY の終値が {p:.2f} を下回る（今より {(1 - p / last) * 100:.1f}% 下）と BIL に逃げる"
-    return f"今は「逃げる」。次の営業日の SPY の終値が {p:.2f} を上回る（今より {(p / last - 1) * 100:.1f}% 上）と戻る"
+        return (f"今は「持つ」。次の営業日の SPY の終値が {p:.2f} を下回る（今より {(1 - p / last) * 100:.1f}% 下）と"
+                " BIL に逃げる（A・B・B′ 共通）")
+    return (f"今は「逃げる」。次の営業日の SPY の終値が {p:.2f} を上回る（今より {(p / last - 1) * 100:.1f}% 上）と"
+            "戻る（A・B・B′ 共通）")
 
 
 def weights_text(w: dict[str, float]) -> str:
