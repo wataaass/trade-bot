@@ -3,6 +3,7 @@
 もちへ。Claude が bot を約300個作ってバックテストで評価し、ペーパーで動かす候補を厳選した。
 仕様書は GitHub の wataaass/trade-bot、ブランチ `claude/effort-estimation-z1y12z` の `docs/HANDOFF_MUSE.md`。
 売買判断の参照実装は `tradebot/handoff.py`（検証と同じ判断になることを `tests/test_handoff.py` で確認済み）。
+判断の理由・過剰適合への注意・特に見てほしい点は `docs/CLAUDE_THINKING.md` にまとめた。
 
 ## お願いしたいこと
 

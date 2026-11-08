@@ -18,6 +18,7 @@ moomoo 証券で動かすトレード bot の検証と、厳選した bot の仕
 |---|---|
 | `docs/HANDOFF_MUSE.md` | 仕様書（結論、選び方、bot ごとのルール、税金、本番の注意） |
 | `docs/MUSE_BRIEF.md` | Muse への依頼文 |
+| `docs/CLAUDE_THINKING.md` | Claude の考え（判断の理由、過剰適合への注意、迷ったこと、Muse に見てほしい点） |
 | `docs/MANUAL.md` | 手で回すときの手順 |
 | `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、61項目、冒頭に目次） |
 | `reports/zoo.md` | 全候補の評価表 |
