@@ -236,7 +236,7 @@ def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> t
 
 def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: float,
                prices: dict[str, float], state: dict | None = None, keep_cash: float = 0.01,
-               deposit: float = 0.0) -> tuple[list[dict], dict]:
+               deposit: float = 0.0, risk: str = "UPRO", safe: str = "BIL") -> tuple[list[dict], dict]:
     """1日分の手順をまとめたもの: 判定 → 目標が前回から変わったときだけ注文 → 次の日に引き継ぐ状態。
 
     bot: "A"、"B"、"B′"（"B'" でもよい）。spy_close: 確定した終値まで（closes_from_moomoo の返り値など）。
@@ -244,6 +244,8 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
     state: 前の日の返り値の state（初日は None）。中身は {"target": {"UPRO": w, "BIL": 1 - w}}。
     deposit: 前回からこの枠に入金した額（積み立て）。目標が変わらない日は、この額だけを目標の比率で買い足す。
       目標が変わる日は、入金分も含めた全体で比率を合わせる。
+    risk・safe: 実際に売買する銘柄（例: safe="SGOV"、risk="SPXL"）。holdings と prices もこの名前で渡す。
+      state の中身は銘柄を差し替えても {"UPRO": w, "BIL": 1 - w} のまま。
     返り値: (注文のリスト（売りが先。目標が変わらない日は、入金がなければ空）, 新しい state)。
     注文は翌営業日の引け間際に成行で出す。約定しなかったときは state を更新せず、翌日もう一度呼ぶ。
     """
@@ -258,8 +260,9 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
         raise ValueError(f"未知の bot: {bot}")
     unchanged = prev is not None and abs(prev["UPRO"] - target["UPRO"]) < 1e-12
     held = {s: q for s, q in holdings.items() if q > 0}
+    trade_w = {risk: target["UPRO"], safe: target["BIL"]}
     if unchanged and held:
         # 目標が変わらない日は、入金があればその額を目標の比率で買い足すだけ（ふだんは空）
-        orders = plan_deposit(min(deposit, cash), target, prices) if deposit > 0 else []
+        orders = plan_deposit(min(deposit, cash), trade_w, prices) if deposit > 0 else []
         return orders, {"target": target}
-    return plan_rebalance(holdings, cash, target, prices, keep_cash), {"target": target}
+    return plan_rebalance(holdings, cash, trade_w, prices, keep_cash), {"target": target}

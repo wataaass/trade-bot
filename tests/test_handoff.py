@@ -229,3 +229,16 @@ def test_daily_plan_invests_deposit_without_selling():
     # B の比率（例: 75%）でも入金分だけを分けて買う
     assert ho.plan_deposit(400.0, {"UPRO": 0.75, "BIL": 0.25}, p) == [
         {"side": "BUY", "symbol": "UPRO", "qty": 2}, {"side": "BUY", "symbol": "BIL", "qty": 1}]
+
+
+def test_daily_plan_with_other_symbols():
+    idx = pd.bdate_range("2023-01-02", periods=400)
+    c = pd.Series(100 * 1.001 ** np.arange(400), index=idx)
+    down = pd.concat([c, pd.Series(c.iloc[-1] * 0.97 ** np.arange(1, 30), index=pd.bdate_range(idx[-1], periods=30)[1:])])
+    p = {"SPXL": 180.0, "SGOV": 100.5}
+    orders, state = ho.daily_plan("A", c, {}, 2000.0, p, risk="SPXL", safe="SGOV")
+    assert orders == [{"side": "BUY", "symbol": "SPXL", "qty": 11}]
+    assert state == {"target": {"UPRO": 1.0, "BIL": 0.0}}
+    orders, state = ho.daily_plan("A", down, {"SPXL": 11}, 20.0, p, state, risk="SPXL", safe="SGOV")
+    assert orders[0] == {"side": "SELL", "symbol": "SPXL", "qty": 11}
+    assert orders[1]["symbol"] == "SGOV" and state["target"]["UPRO"] == 0.0
