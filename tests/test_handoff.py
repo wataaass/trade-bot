@@ -304,3 +304,23 @@ def test_plan_switch_leaves_room_for_withholding_tax():
     assert taxed[1]["qty"] < plain[1]["qty"]
     assert 20 + 15 * 128 - 960 * ho.TAX_RATE - taxed[1]["qty"] * 91.5 >= 0  # 税金を引いても買える
     assert ho.plan_switch({"UPRO": 15}, 20.0, "BIL", p, basis={"UPRO": 200.0}) == plain  # 損なら差し引かない
+
+
+def test_combo_matches_backtest_weights_every_day():
+    """本命の1枠: 直近500営業日の毎日、参照実装の目標の比率が、検証（月末型＋B の合成）と一致する。"""
+    spy = load_or_skip("SPY")
+    close = spy["close"]
+    data = {"MKT": spy, "IEF": spy}
+    sig = zoo.e_trend("MKT", "IEF", ho.MONTHLY_N, monthly=True)(data, spy)
+    on = sig["MKT"]["entry"].astype(float).where(sig["MKT"]["entry"] | sig["IEF"]["entry"]).ffill()
+    # 検証の月末型は「月末の終値で決めて翌営業日に約定」。参照実装の month_end_today を同じ日に True にする
+    me = zoo.month_end(close.index)
+    wb = zoo.voltarget_share(close, ho.K_B, ho.BAND)
+    state = None
+    for d in close.index[-500:]:
+        _, state = ho.combo_plan(close.loc[:d], {"SPYM": 1}, 0.0, {"UPRO": 1, "BIL": 1, "SPYM": 1, "IEF": 1},
+                                 state, month_end_today=bool(me.loc[d]))
+        t = state["target"]
+        assert t["SPYM"] == pytest.approx(0.7 * on.loc[d], abs=1e-12), d
+        assert t["UPRO"] == pytest.approx(0.3 * wb.loc[d], abs=1e-12), d
+        assert sum(t.values()) == pytest.approx(1.0)

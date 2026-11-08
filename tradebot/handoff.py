@@ -307,3 +307,50 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
         orders = plan_deposit(min(deposit, cash), trade_w, prices) if deposit > 0 else []
         return orders, {"target": target}
     return plan_rebalance(holdings, cash, trade_w, prices, keep_cash, basis), {"target": target}
+
+
+# ---------------------------------------------------------------- 本命の1枠: B 30%＋月末型 70%（2026-11-08 の提案）
+MONTHLY_N = 250  # Muse の月末型: 月末の SPY 終値が250日線より上なら SPYM、下なら IEF
+COMBO_B = 0.30  # 枠の中の B の割合（残り 70% が月末型）
+
+
+def monthly_risk_on(spy_close: pd.Series, month_end_today: bool = False, n: int = MONTHLY_N) -> bool:
+    """月末型の判定: 直近の月末の終値が n 日線より上なら True（SPYM）、下なら False（IEF）。
+
+    month_end_today: 今日（spy_close の最後の日）がその月の最終営業日なら True を渡す（今日の終値で判定する）。
+    False なら、前の月の最終営業日の終値で判定する（月の途中では判定は変わらない）。
+    """
+    c = spy_close.dropna()
+    if not month_end_today:
+        c = c.loc[c.index.to_period("M") < c.index[-1].to_period("M")]
+    if len(c) < n:
+        raise ValueError(f"{n}日分の終値が必要（{len(c)}日分しかない）")
+    return bool(c.iloc[-1] > c.iloc[-n:].mean())
+
+
+def combo_weights(spy_close: pd.Series, month_end_today: bool = False, prev_b: float | None = None,
+                  share_b: float = COMBO_B, k: float = K_B) -> dict[str, float]:
+    """本命の1枠の目標の比率 {"UPRO", "BIL", "SPYM", "IEF"}。
+
+    B の部分（share_b）は upro_share（prev_b は前回の B の UPRO の比率）、月末型の部分（1 − share_b）は monthly_risk_on。
+    """
+    u = upro_share(spy_close, k, prev_b)
+    on = 1.0 if monthly_risk_on(spy_close, month_end_today) else 0.0
+    return {"UPRO": share_b * u, "BIL": share_b * (1 - u), "SPYM": (1 - share_b) * on, "IEF": (1 - share_b) * (1 - on)}
+
+
+def combo_plan(spy_close: pd.Series, holdings: dict[str, int], cash: float, prices: dict[str, float],
+               state: dict | None = None, month_end_today: bool = False, keep_cash: float = 0.01,
+               deposit: float = 0.0, basis: dict[str, float] | None = None) -> tuple[list[dict], dict]:
+    """本命の1枠の1日分の手順（daily_plan と同じ使い方）。
+
+    B か月末型の目標が変わった日だけ、全体を目標の比率へ合わせる注文を出す（売りが先）。変わらない日は、
+    入金（deposit）があればその額を目標の比率で買い足すだけ。state は {"target": {...}, "b": B の UPRO の比率}。
+    """
+    prev = (state or {}).get("target")
+    target = combo_weights(spy_close, month_end_today, (state or {}).get("b"))
+    new_state = {"target": target, "b": target["UPRO"] / COMBO_B}
+    unchanged = prev is not None and all(abs(prev[s] - target[s]) < 1e-12 for s in target)
+    if unchanged and any(q > 0 for q in holdings.values()):
+        return (plan_deposit(min(deposit, cash), target, prices) if deposit > 0 else []), new_state
+    return plan_rebalance(holdings, cash, target, prices, keep_cash, basis), new_state
