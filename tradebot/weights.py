@@ -24,6 +24,7 @@ def run_weights(
     end: str | None = None,
     rebalance_monthly: bool = False,
     gain_harvest: bool = False,
+    loss_harvest: bool = False,
 ) -> bt.Result:
     """target は index=日付、列=銘柄、値=その日の終値で決めた目標の比率（行の合計は1、NaN の行は判定なし）。
 
@@ -31,6 +32,8 @@ def run_weights(
     rebalance_monthly なら、変わらなくても月末ごとに目標の比率へ戻す（値動きでずれた分を直す）。
     gain_harvest なら、年の最終営業日にその年の売買損益がマイナスのとき、含み益のある銘柄を
     損と相殺できる分だけ終値で売って同じ値段で買い直す（益出し。日本にはウォッシュセール規制がない）。
+    loss_harvest なら、年の最終営業日にその年の売買損益がプラスのとき、含み損のある銘柄を
+    益と相殺できる分だけ売って買い直す（損出し）。
     """
     syms = list(target.columns)
     dates = pd.DatetimeIndex(sorted(set().union(*(data[s].index for s in syms))))
@@ -195,6 +198,21 @@ def run_weights(
                 if gain_per <= 0:
                     continue
                 qty = min(shares[j], loss / gain_per)
+                before = cash
+                sell(j, qty, c[i, j], day.year)
+                buy(j, cash - before, c[i, j])
+
+        if loss_harvest and tax is not None and last_of_year and realized.get(day.year, 0.0) > 0:
+            for j in range(n):
+                gain = realized.get(day.year, 0.0)
+                if gain <= 0:
+                    break
+                if shares[j] <= 0:
+                    continue
+                loss_per = basis[j] / shares[j] - c[i, j] * (1 - costs.slippage)
+                if loss_per <= 0:
+                    continue
+                qty = min(shares[j], gain / loss_per)
                 before = cash
                 sell(j, qty, c[i, j], day.year)
                 buy(j, cash - before, c[i, j])
