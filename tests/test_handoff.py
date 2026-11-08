@@ -212,3 +212,20 @@ def test_daily_plan_follows_targets_and_trades_only_on_changes():
                 assert abs(got - state["target"]["UPRO"]) <= p["UPRO"] / value + 0.02, (bot, d)
         changes = int((want.loc[days].diff().abs() > 1e-12).sum())
         assert n_orders <= changes + 1, bot
+
+
+def test_daily_plan_invests_deposit_without_selling():
+    idx = pd.bdate_range("2023-01-02", periods=400)
+    c = pd.Series(100 * 1.001 ** np.arange(400), index=idx)  # 落ち着いた上昇 → UPRO 100%
+    p = {"UPRO": 128.0, "BIL": 91.5}
+    orders, state = ho.daily_plan("A", c, {}, 2000.0, p)
+    assert orders == [{"side": "BUY", "symbol": "UPRO", "qty": 15}]
+    # 同じ目標のまま、入金で現金が増えた日は買い足すだけ
+    orders, state = ho.daily_plan("A", c, {"UPRO": 15}, 80.0 + 300.0, p, state, deposit=300.0)
+    assert orders == [{"side": "BUY", "symbol": "UPRO", "qty": 2}]
+    # 入金がなければ、端数の現金が1株分あっても何もしない（検証と同じく、比率が変わる日まで待つ）
+    orders, _ = ho.daily_plan("A", c, {"UPRO": 17}, 130.0, p, state)
+    assert orders == []
+    # B の比率（例: 75%）でも入金分だけを分けて買う
+    assert ho.plan_deposit(400.0, {"UPRO": 0.75, "BIL": 0.25}, p) == [
+        {"side": "BUY", "symbol": "UPRO", "qty": 2}, {"side": "BUY", "symbol": "BIL", "qty": 1}]

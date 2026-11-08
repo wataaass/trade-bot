@@ -205,6 +205,20 @@ def plan_rebalance(holdings: dict[str, int], cash: float, weights: dict[str, flo
     return orders
 
 
+def plan_deposit(amount: float, weights: dict[str, float], prices: dict[str, float]) -> list[dict]:
+    """入金した額（amount）を、目標の比率で買い足す注文（売りはしない）。1株に届かない分は現金のまま。"""
+    orders: list[dict] = []
+    left = amount
+    for sym, w in sorted(weights.items(), key=lambda kv: -kv[1]):
+        if w <= 0:
+            continue
+        qty = int(min(amount * w, left) // prices[sym])
+        if qty > 0:
+            orders.append({"side": "BUY", "symbol": sym, "qty": qty})
+            left -= qty * prices[sym]
+    return orders
+
+
 def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> tuple[str, float]:
     """次の営業日の終値がいくらなら、200日線の判定（非対称の遊びつき）が切り替わるかを返す。
 
@@ -221,13 +235,16 @@ def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> t
 
 
 def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: float,
-               prices: dict[str, float], state: dict | None = None, keep_cash: float = 0.01) -> tuple[list[dict], dict]:
+               prices: dict[str, float], state: dict | None = None, keep_cash: float = 0.01,
+               deposit: float = 0.0) -> tuple[list[dict], dict]:
     """1日分の手順をまとめたもの: 判定 → 目標が前回から変わったときだけ注文 → 次の日に引き継ぐ状態。
 
     bot: "A"、"B"、"B′"（"B'" でもよい）。spy_close: 確定した終値まで（closes_from_moomoo の返り値など）。
     holdings・cash・prices: この枠の持ち株・現金・直近の値段（plan_switch と同じ）。
     state: 前の日の返り値の state（初日は None）。中身は {"target": {"UPRO": w, "BIL": 1 - w}}。
-    返り値: (注文のリスト（売りが先、変わらない日は空）, 新しい state)。
+    deposit: 前回からこの枠に入金した額（積み立て）。目標が変わらない日は、この額だけを目標の比率で買い足す。
+      目標が変わる日は、入金分も含めた全体で比率を合わせる。
+    返り値: (注文のリスト（売りが先。目標が変わらない日は、入金がなければ空）, 新しい state)。
     注文は翌営業日の引け間際に成行で出す。約定しなかったときは state を更新せず、翌日もう一度呼ぶ。
     """
     prev = (state or {}).get("target")
@@ -242,5 +259,7 @@ def daily_plan(bot: str, spy_close: pd.Series, holdings: dict[str, int], cash: f
     unchanged = prev is not None and abs(prev["UPRO"] - target["UPRO"]) < 1e-12
     held = {s: q for s, q in holdings.items() if q > 0}
     if unchanged and held:
-        return [], {"target": target}
+        # 目標が変わらない日は、入金があればその額を目標の比率で買い足すだけ（ふだんは空）
+        orders = plan_deposit(min(deposit, cash), target, prices) if deposit > 0 else []
+        return orders, {"target": target}
     return plan_rebalance(holdings, cash, target, prices, keep_cash), {"target": target}
