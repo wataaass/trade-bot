@@ -23,11 +23,14 @@ def run_weights(
     start: str | None = None,
     end: str | None = None,
     rebalance_monthly: bool = False,
+    gain_harvest: bool = False,
 ) -> bt.Result:
     """target は index=日付、列=銘柄、値=その日の終値で決めた目標の比率（行の合計は1、NaN の行は判定なし）。
 
     目標の行が前の目標と変わった日の翌日に、差の分だけ売買する（売りを先に）。
     rebalance_monthly なら、変わらなくても月末ごとに目標の比率へ戻す（値動きでずれた分を直す）。
+    gain_harvest なら、年の最終営業日にその年の売買損益がマイナスのとき、含み益のある銘柄を
+    損と相殺できる分だけ終値で売って同じ値段で買い直す（益出し。日本にはウォッシュセール規制がない）。
     """
     syms = list(target.columns)
     dates = pd.DatetimeIndex(sorted(set().union(*(data[s].index for s in syms))))
@@ -181,6 +184,20 @@ def run_weights(
                 cash -= div
                 tax_paid += div
                 cover(i - 1, day.year)
+
+        last_of_year = i + 1 == len(dates) or dates[i + 1].year != day.year
+        if gain_harvest and tax is not None and last_of_year and realized.get(day.year, 0.0) < 0:
+            for j in range(n):
+                loss = -realized.get(day.year, 0.0)
+                if loss <= 0 or shares[j] <= 0:
+                    break
+                gain_per = c[i, j] * (1 - costs.slippage) - basis[j] / shares[j]
+                if gain_per <= 0:
+                    continue
+                qty = min(shares[j], loss / gain_per)
+                before = cash
+                sell(j, qty, c[i, j], day.year)
+                buy(j, cash - before, c[i, j])
 
         pos = float(np.nansum(shares * c[i]))
         equity[i] = cash + pos

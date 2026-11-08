@@ -228,6 +228,30 @@ def plan_deposit(amount: float, weights: dict[str, float], prices: dict[str, flo
     return orders
 
 
+def plan_gain_harvest(realized_ytd: float, holdings: dict[str, int], basis: dict[str, float],
+                      prices: dict[str, float]) -> list[dict]:
+    """年末の益出し（確定申告で損失を繰り越さない人向け、改良61）。
+
+    その年の売買損益（realized_ytd）がマイナスのとき、含み益のある銘柄を、損と相殺できる株数だけ売って
+    同じ株数をすぐ買い直す注文を作る（日本にはウォッシュセール規制がないので、買い直してよい）。
+    年の最終営業日の引け間際に出す。損失を確定申告で繰り越すなら、やらなくてよい（効果がない）。
+    """
+    orders: list[dict] = []
+    loss = -realized_ytd
+    for sym, qty in sorted(holdings.items(), key=lambda kv: -(prices[kv[0]] - basis.get(kv[0], prices[kv[0]]))):
+        if loss <= 0:
+            break
+        gain = prices[sym] - basis.get(sym, prices[sym])
+        # 浮く税金（含み益 × 税率）が往復の費用（手数料 0.132% ＋ 約定のずれ 0.05% を2回 ≒ 0.4%）より小さければやらない
+        if qty <= 0 or gain <= 0 or gain * TAX_RATE < 0.004 * prices[sym]:
+            continue
+        n = min(qty, int(loss // gain))
+        if n > 0:
+            orders += [{"side": "SELL", "symbol": sym, "qty": n}, {"side": "BUY", "symbol": sym, "qty": n}]
+            loss -= n * gain
+    return orders
+
+
 def switch_threshold(close: pd.Series, n: int = SMA_N, up: float = REENTRY) -> tuple[str, float]:
     """次の営業日の終値がいくらなら、200日線の判定（非対称の遊びつき）が切り替わるかを返す。
 

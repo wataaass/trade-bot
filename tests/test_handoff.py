@@ -286,3 +286,12 @@ def test_daily_plan_migrates_old_b_holdings():
     orders, state = ho.daily_plan("B", c, {"SSO": 20}, 30.0, p)
     assert orders[0] == {"side": "SELL", "symbol": "SSO", "qty": 20}
     assert orders[1]["side"] == "BUY" and orders[1]["symbol"] == "UPRO"
+
+
+def test_plan_gain_harvest():
+    p = {"UPRO": 128.0, "BIL": 91.5}
+    # 今年 -500 ドルの損。UPRO は1株あたり +28 の含み益 → 17株売って買い直すと 476 ドルの益で、損とほぼ相殺
+    orders = ho.plan_gain_harvest(-500.0, {"UPRO": 20, "BIL": 3}, {"UPRO": 100.0, "BIL": 91.0}, p)
+    assert orders == [{"side": "SELL", "symbol": "UPRO", "qty": 17}, {"side": "BUY", "symbol": "UPRO", "qty": 17}]
+    assert ho.plan_gain_harvest(300.0, {"UPRO": 20}, {"UPRO": 100.0}, p) == []  # 利益の年は何もしない
+    assert ho.plan_gain_harvest(-300.0, {"UPRO": 20}, {"UPRO": 150.0}, p) == []  # 含み益がなければ何もしない
