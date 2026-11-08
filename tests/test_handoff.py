@@ -257,3 +257,23 @@ def test_plan_rebalance_leaves_room_for_withholding_tax():
     assert cash_left >= 0
     # 損が出ている売りなら差し引かない
     assert ho.plan_rebalance({"UPRO": 15}, 20.0, w, p, basis={"UPRO": 200.0}) == plain
+
+
+def test_replay_of_daily_plan_matches_backtest():
+    """参照実装を実物の値段で毎日動かした手取りが、同じ条件のバックテストと年 0.3 ポイント以内で一致する。"""
+    from scripts import replay_handoff as rp
+    from tradebot import backtest as bt
+    from tradebot import weights as wt
+    spy, upro, bil = (load_or_skip(s) for s in ("SPY", "UPRO", "BIL"))
+    idx = spy.index.intersection(upro.index).intersection(bil.index)
+    start = "2019-01-01"
+    data = {}
+    for key, d in (("MKT", spy), ("L3", upro), ("CASH", bil)):
+        d = d.loc[idx].copy()
+        d["open"] = d["close"]
+        data[key] = d
+    eq = rp.replay("B", data["MKT"]["close"], data["L3"]["close"], data["CASH"]["close"], start)
+    w = zoo.voltarget_share(data["MKT"]["close"], ho.K_B, ho.BAND)
+    res = wt.run_weights({"L3": data["L3"], "CASH": data["CASH"]}, pd.DataFrame({"L3": w, "CASH": 1 - w}),
+                         bt.Config(initial_cash=2000, fractional=False, tax=bt.Tax(withhold=True)), start)
+    assert abs(bt.metrics(eq)["CAGR"] - bt.metrics(res.equity)["CAGR"]) < 0.003
