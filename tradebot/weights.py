@@ -119,10 +119,17 @@ def run_weights(
                 shares[j] *= 1 - f
         cash += f * value
 
+    contrib: dict[pd.Timestamp, float] = {}
     for i, day in enumerate(dates):
         if i > 0 and day.year != dates[i - 1].year:
             settle(dates[i - 1].year)
             cover(i - 1, day.year)
+
+        # 積み立て: 各月の最初の営業日に入金し、今の目標の比率で買い足す（売りはしない）
+        deposit = cfg.monthly_contribution if i > 0 and day.month != dates[i - 1].month else 0.0
+        if deposit > 0:
+            cash += deposit
+            contrib[day] = deposit
 
         held = shares.copy()  # 前日の終値の時点で持っていた株数（配当を受け取る分）
         if pending is not None:
@@ -142,6 +149,12 @@ def run_weights(
                     if short[j] > 0:
                         buy(j, short[j] * scale, px[j])
             pending = None
+        elif deposit > 0 and current is not None and cash > 0:
+            px = np.where(np.isnan(o[i]), c[i - 1], o[i])
+            budget = cash
+            for j in range(n):
+                if current[j] > 0 and not np.isnan(px[j]):
+                    buy(j, budget * current[j], px[j])
 
         if tax is not None and i > 0:
             div = float(np.sum(dv[i] * c[i - 1] * np.minimum(held, shares))) * tax.dividend
@@ -168,6 +181,7 @@ def run_weights(
             sell(j, shares[j], c[last, j], dates[last].year)
     settle(dates[last].year)
     equity[-1] = cash
-    res = bt.Result(pd.Series(equity, index=dates), [], pd.Series(exposure, index=dates), tax_paid)
+    res = bt.Result(pd.Series(equity, index=dates), [], pd.Series(exposure, index=dates), tax_paid,
+                    pd.Series(contrib, dtype=float))
     res.turnover = turnover  # type: ignore[attr-defined]
     return res

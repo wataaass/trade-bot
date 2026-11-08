@@ -19,6 +19,7 @@ import pandas as pd  # noqa: E402
 
 from scripts import run_zoo as rz  # noqa: E402
 from tradebot import backtest as bt  # noqa: E402
+from tradebot import weights as wt  # noqa: E402
 from tradebot import zoo  # noqa: E402
 
 YEARS = 20
@@ -28,8 +29,9 @@ MONTHLY = 200
 VARIANTS = {
     "持ち続け": (zoo.c_hold("MKT"), ["MKT"]),
     "A": (zoo.c_sma_asym(200, "L3", 0.01), ["L3", "CASH"]),
-    "B": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01), ["MKT", "L2", "L3", "CASH"]),
-    "B′": (zoo.c_voltarget_monthly_lev(200, 0.20, 0.35, 0.01), ["MKT", "L2", "L3", "CASH"]),
+    "B 旧": (zoo.c_voltarget_monthly_lev(200, 0.15, 0.25, 0.01), ["MKT", "L2", "L3", "CASH"]),
+    "B": (0.15, None),  # 新しい B（UPRO と BIL の比率を連続的に、改良50）
+    "B′": (0.20, None),
 }
 
 DATA: dict = {}
@@ -40,7 +42,11 @@ def _init() -> None:
     data, bench, _ = rz.load_universe("century")
     DATA.update(data)
     for name, (make, syms) in VARIANTS.items():
-        SIGS[name] = {s: f for s, f in make(data, bench).items() if s in syms}
+        if syms is None:
+            w = zoo.voltarget_share(data["MKT"]["close"], make, 0.1)
+            SIGS[name] = pd.DataFrame({"L3": w, "CASH": 1 - w})
+        else:
+            SIGS[name] = {s: f for s, f in make(data, bench).items() if s in syms}
 
 
 def _one(job: tuple[str, int, float]) -> dict:
@@ -48,7 +54,11 @@ def _one(job: tuple[str, int, float]) -> dict:
     sig = SIGS[name]
     cfg = bt.Config(initial_cash=CASH0, fractional=True, max_positions=1, tax=bt.TAXABLE,
                     monthly_contribution=monthly)
-    res = bt.run({s: DATA[s] for s in sig}, sig, cfg, f"{y0}-01-01", f"{y0 + YEARS - 1}-12-31")
+    a, b = f"{y0}-01-01", f"{y0 + YEARS - 1}-12-31"
+    if isinstance(sig, pd.DataFrame):
+        res = wt.run_weights({s: DATA[s] for s in sig.columns}, sig, cfg, a, b)
+    else:
+        res = bt.run({s: DATA[s] for s in sig}, sig, cfg, a, b)
     paid = CASH0 + (res.contributions.sum() if res.contributions is not None else 0.0)
     return {"variant": name, "start": y0, "monthly": monthly, "irr": bt.money_weighted_return(res, CASH0),
             "final": float(res.equity.iloc[-1]), "paid": float(paid)}

@@ -90,3 +90,23 @@ def test_errors():
         ho.daily_plan("Z", short, {}, 2000.0, {"UPRO": 1.0, "BIL": 1.0})
     with pytest.raises(ValueError):  # 200日線に必要な日数が足りない
         ho.upro_share(short.iloc[:150])
+
+
+def test_contribution_with_weights_buys_by_target():
+    idx = pd.bdate_range("2020-01-01", "2021-12-31")
+    c = pd.Series(100 * 1.0004 ** np.arange(len(idx)), index=idx)
+    a = pd.DataFrame({"open": c, "high": c, "low": c, "close": c, "volume": 1})
+    flat = pd.Series(50.0, index=idx)
+    b = pd.DataFrame({"open": flat, "high": flat, "low": flat, "close": flat, "volume": 1})
+    no_cost = bt.Costs(commission_rate=0, slippage=0)
+    cfg = bt.Config(initial_cash=1000, fractional=True, costs=no_cost, monthly_contribution=100)
+    w = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    res = wt.run_weights({"A": a, "B": b}, w, cfg)
+    assert len(res.contributions) == 23
+    # 入金はすべて投資され、現金は残らない（最終日に全部売る前の日で見る）
+    pos_value = res.equity.iloc[-2]
+    assert res.exposure.iloc[-2] == pytest.approx(1.0)
+    assert pos_value > 1000 + 23 * 100  # A が値上がりしている
+    # 費用・税金なしなら、積み立てを含めた年率は A（年 約10%）と B（0%）の間
+    irr = bt.money_weighted_return(res, 1000)
+    assert 0.0 < irr < 0.11
