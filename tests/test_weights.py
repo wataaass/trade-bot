@@ -66,3 +66,27 @@ def test_plan_rebalance_sells_part_then_buys():
     # 使うお金は手元の現金と売った分を超えない
     cash_after = 30 + 10 * 128 - orders[1]["qty"] * 91.5
     assert cash_after >= 0
+
+
+def test_no_target_means_no_trades():
+    data = _two_assets(100)
+    w = pd.DataFrame({"A": np.nan, "B": np.nan}, index=data["A"].index)
+    res = wt.run_weights(data, w, bt.Config(initial_cash=2000, tax=bt.TAXABLE))
+    assert (res.equity == 2000).all() and res.tax_paid == 0
+
+
+def test_plan_rebalance_edge_cases():
+    p = {"UPRO": 128.0, "BIL": 91.5}
+    assert ho.plan_rebalance({}, 0.0, {"UPRO": 1.0, "BIL": 0.0}, p) == []  # お金がなければ何もしない
+    assert ho.plan_rebalance({}, 100.0, {"UPRO": 1.0, "BIL": 0.0}, p) == []  # 1株に届かない
+    # すでに目標どおりなら売買しない
+    assert ho.plan_rebalance({"UPRO": 15}, 30.0, {"UPRO": 1.0, "BIL": 0.0}, p) == []
+
+
+def test_errors():
+    idx = pd.bdate_range("2023-01-02", periods=210)
+    short = pd.Series(100.0 + np.arange(210), index=idx)
+    with pytest.raises(ValueError):
+        ho.daily_plan("Z", short, {}, 2000.0, {"UPRO": 1.0, "BIL": 1.0})
+    with pytest.raises(ValueError):  # 200日線に必要な日数が足りない
+        ho.upro_share(short.iloc[:150])
