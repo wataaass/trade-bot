@@ -277,3 +277,12 @@ def test_replay_of_daily_plan_matches_backtest():
     res = wt.run_weights({"L3": data["L3"], "CASH": data["CASH"]}, pd.DataFrame({"L3": w, "CASH": 1 - w}),
                          bt.Config(initial_cash=2000, fractional=False, tax=bt.Tax(withhold=True)), start)
     assert abs(bt.metrics(eq)["CAGR"] - bt.metrics(res.equity)["CAGR"]) < 0.003
+
+
+def test_daily_plan_migrates_old_b_holdings():
+    idx = pd.bdate_range("2023-01-02", periods=400)
+    c = pd.Series(100 * 1.001 ** np.arange(400), index=idx)
+    p = {"UPRO": 128.0, "BIL": 91.5, "SSO": 95.0}
+    orders, state = ho.daily_plan("B", c, {"SSO": 20}, 30.0, p)
+    assert orders[0] == {"side": "SELL", "symbol": "SSO", "qty": 20}
+    assert orders[1]["side"] == "BUY" and orders[1]["symbol"] == "UPRO"
