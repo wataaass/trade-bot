@@ -104,6 +104,11 @@ def ic_stats(ic: pd.Series) -> dict:
     }
 
 
+def tstat_pct(x: pd.Series) -> str:
+    t = x.mean() / x.std() * np.sqrt(len(x)) if x.std() > 0 else float("nan")
+    return f"{x.mean():+.2%}（{t:+.1f}）"
+
+
 def report(args: argparse.Namespace) -> None:
     src = cache_path(args.model, args.lookback)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -141,16 +146,16 @@ def report(args: argparse.Namespace) -> None:
         "",
         "毎週、予測した上昇率と実際の5営業日の上昇率の順位相関を測る。0なら当てずっぽう。",
         "",
+        "上位5・10の超過は「予測の上位の実際の上昇率 − 50銘柄の平均」の週平均で、かっこ内はその t値。",
+        "",
         "| 点数 | 週 | 順位相関の平均 | t値 | プラスの週 | 上位5の超過（週平均） | 上位10の超過（週平均） |",
         "|---|---|---|---|---|---|---|",
     ]
     for name, sc in signals.items():
         s = ic_stats(kb.rank_ic(sc, real))
-        t5 = kb.top_minus_all(sc, real, 5).mean()
-        t10 = kb.top_minus_all(sc, real, 10).mean()
-        lines.append(
-            f"| {name} | {s['週']} | {s['順位相関の平均']:+.3f} | {s['t値']:+.2f} | {s['プラスの週']:.0%} | {t5:+.2%} | {t10:+.2%} |"
-        )
+        t5 = tstat_pct(kb.top_minus_all(sc, real, 5))
+        t10 = tstat_pct(kb.top_minus_all(sc, real, 10))
+        lines.append(f"| {name} | {s['週']} | {s['順位相関の平均']:+.3f} | {s['t値']:+.2f} | {s['プラスの週']:.0%} | {t5} | {t10} |")
 
     corr = {name: kb.rank_ic(sc, pred.rank(axis=1)).mean() for name, sc in signals.items() if name != "Kronos"}
     lines += ["", "Kronos の予測と、単純な型の点数の順位相関（週ごとの平均）。1に近いほど Kronos は単純な型と同じことをしている。", ""]
@@ -159,12 +164,14 @@ def report(args: argparse.Namespace) -> None:
     cfg = bt.Config(initial_cash=args.cash, fractional=True, tax=bt.Tax(withhold=True))
     spy = dt.load("SPY")
     all_data = {**data, "SPY": spy}
-    start = pred.index[0] + pd.Timedelta(days=1)
+    start = pred.index[0]  # 最初の判定日。翌営業日の始値で買う
     rows = []
 
-    def add(name: str, target: pd.DataFrame) -> None:
+    def add(name: str, target: pd.DataFrame, rows: list | None = rows) -> float | None:
         res = wt.run_weights(all_data, target, cfg, start=str(start.date()))
         m = bt.metrics(res.equity)
+        if rows is None:
+            return m["CAGR"]
         years = (res.equity.index[-1] - res.equity.index[0]).days / 365.25
         rows.append(
             {
@@ -184,6 +191,15 @@ def report(args: argparse.Namespace) -> None:
     add("対象の全銘柄を同じ比率で持つ", kb.equal_weight(pred))
     add("SPY を持ち続ける", pd.DataFrame({"SPY": 1.0}, index=pred.index[:1]))
 
+    # でたらめに選んだ場合: 毎週、同じ50銘柄から5銘柄をくじで選ぶ（売買の回数と費用は Kronos 上位5とほぼ同じ）
+    rng = np.random.default_rng(0)
+    rand = []
+    for _ in range(args.random):
+        noise = pd.DataFrame(rng.random(pred.shape), index=pred.index, columns=pred.columns).where(pred.notna())
+        rand.append(add("", kb.pick_top(noise, 5), rows=None))
+    rand = np.array(rand)
+    kronos5 = rows[0]["税引き後の年率"]
+
     lines += [
         "",
         "## 手数料と税金を引いた成績",
@@ -195,6 +211,16 @@ def report(args: argparse.Namespace) -> None:
         lines.append(
             f"| {r['型']} | {r['税引き後の年率']:+.1%} | {r['最大下落']:.1%} | ${r['手取り']:,.0f} | {r['売買額 / 年']:.1f} | ${r['税金']:,.0f} |"
         )
+    lines += [
+        "",
+        f"## でたらめに5銘柄を選んだ場合（{len(rand)} 回）",
+        "",
+        "毎週、同じ50銘柄からくじで5銘柄を選んで持ち替える。売買の回数と費用は Kronos 上位5とほぼ同じなので、",
+        "Kronos 上位5の成績がこの分布のどこにあるかで、予測が効いたのか運なのかを見る。",
+        "",
+        f"- 税引き後の年率: 中央値 {np.median(rand):+.1%}、下位5% {np.quantile(rand, 0.05):+.1%}、上位5% {np.quantile(rand, 0.95):+.1%}",
+        f"- Kronos 上位5（{kronos5:+.1%}）を上回った回: {(rand >= kronos5).mean():.0%}",
+    ]
     out = ROOT / "reports" / "kronos.md"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
@@ -212,6 +238,7 @@ def main() -> None:
     ap.add_argument("--start", default=START)
     ap.add_argument("--end", default=None)
     ap.add_argument("--cash", type=float, default=2000.0)
+    ap.add_argument("--random", type=int, default=200, help="でたらめに選ぶ型を何回試すか")
     ap.add_argument("--refresh-spy", action="store_true")
     args = ap.parse_args()
     predict(args) if args.cmd == "predict" else report(args)
