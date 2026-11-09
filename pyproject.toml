@@ -6,6 +6,8 @@ dependencies = ["pandas>=2.2", "numpy>=1.26", "requests>=2.31", "tabulate>=0.9",
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# Kronos の予測（scripts/run_kronos.py predict）だけに要る。CPU 版の torch で動く
+kronos = ["torch>=2.0", "einops>=0.8", "huggingface_hub>=0.23", "safetensors>=0.4", "tqdm>=4.66"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -13,6 +15,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+extend-exclude = ["tradebot/kronos_model"]  # 取り込んだ外部のコード
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B"]
@@ -23,7 +26,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["tradebot"]
+packages = ["tradebot", "tradebot.kronos_model"]
 
 [tool.setuptools.package-data]
 tradebot = ["ref/*.csv"]
