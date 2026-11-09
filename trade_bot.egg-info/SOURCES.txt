@@ -3,6 +3,8 @@ pyproject.toml
 tests/test_backtest.py
 tests/test_handoff.py
 tests/test_live.py
+tests/test_longhist.py
+tests/test_weights.py
 tests/test_zoo.py
 trade_bot.egg-info/PKG-INFO
 trade_bot.egg-info/SOURCES.txt
@@ -18,5 +20,6 @@ tradebot/live.py
 tradebot/longhist.py
 tradebot/strategies.py
 tradebot/universe.py
+tradebot/weights.py
 tradebot/zoo.py
 tradebot/ref/sp500_membership.csv

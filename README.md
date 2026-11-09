@@ -20,7 +20,8 @@ moomoo 証券で動かすトレード bot の検証と、厳選した bot の仕
 | `docs/MUSE_BRIEF.md` | Muse への依頼文 |
 | `docs/CLAUDE_THINKING.md` | Claude の考え（判断の理由、過剰適合への注意、迷ったこと、Muse に見てほしい点） |
 | `docs/MANUAL.md` | 手で回すときの手順 |
-| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、62項目、冒頭に目次） |
+| `reports/improvements.md` | 改良の記録（試して採用したこと・やめたこと、63項目、冒頭に目次） |
+| `reports/kronos.md` | 実験枠: Kronos（AI の予測モデル）で大型株の上位を持つ型の検証（採用しない） |
 | `reports/zoo.md` | 全候補の評価表 |
 | `reports/outlook.md` | 10年運用したときの成績の幅 |
 | [検証ダッシュボード](https://claude.ai/artifact/8ZxiVQjhXMtTeKDkj8EWtN) | 主な結果のグラフ（開くには共有が必要） |
@@ -36,6 +37,7 @@ python scripts/run_contrib.py           # 毎月積み立てた場合（reports/
 python scripts/run_bweights.py          # B の持ち方の比較（reports/b_weights.md）
 python scripts/replay_handoff.py         # 参照実装を過去の値段で毎日動かしてバックテストと比べる
 python scripts/export_dashboard.py DIR  # ダッシュボード用の CSV
+python scripts/run_kronos.py report     # Kronos の実験枠（予測は predict、要 pip install -e ".[kronos]"）
 python -m pytest                        # テスト
 ruff check tradebot scripts tests       # 静的解析
 ```
