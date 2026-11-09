@@ -2,8 +2,8 @@
 
     pip install -e ".[kronos]"                # torch など（初回だけ）
     python scripts/fetch_sp500.py             # 株価（初回だけ）
-    python scripts/run_kronos.py predict      # 予測を reports/kronos/ に貯める（途中から再開できる）
-    python scripts/run_kronos.py report       # 予測から成績を計算して reports/kronos.md に書く
+    python scripts/run_kronos.py predict      # 予測を data/kronos/ に貯める（途中から再開できる）
+    python scripts/run_kronos.py report       # 予測を reports/kronos/ に写し、成績を reports/kronos.md に書く
 
 予測は毎週の最終営業日の終値で行い、翌営業日の始値で持ち替える。
 正式な評価は Kronos の学習データが終わったあと（2024年7月以降）だけ。
@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -28,7 +29,8 @@ from tradebot import kronos_bot as kb  # noqa: E402
 from tradebot import universe as uv  # noqa: E402
 from tradebot import weights as wt  # noqa: E402
 
-OUT_DIR = ROOT / "reports" / "kronos"
+OUT_DIR = ROOT / "reports" / "kronos"  # 成績を出すときに予測をここへ写してコミットする
+CACHE_DIR = ROOT / "data" / "kronos"  # 計算中の予測（コミットしない）
 START = "2024-07-01"
 
 
@@ -38,7 +40,7 @@ def members_on(iv: pd.DataFrame, date: pd.Timestamp) -> list[str]:
 
 
 def cache_path(model: str, lookback: int) -> Path:
-    return OUT_DIR / f"preds_{model}_lb{lookback}.csv"
+    return CACHE_DIR / f"preds_{model}_lb{lookback}.csv"
 
 
 def predict(args: argparse.Namespace) -> None:
@@ -48,7 +50,7 @@ def predict(args: argparse.Namespace) -> None:
 
     torch.set_num_threads(args.threads)
     torch.manual_seed(0)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = cache_path(args.model, args.lookback)
     done = set(pd.read_csv(path, parse_dates=["date"])["date"]) if path.exists() else set()
 
@@ -103,7 +105,10 @@ def ic_stats(ic: pd.Series) -> dict:
 
 
 def report(args: argparse.Namespace) -> None:
-    path = cache_path(args.model, args.lookback)
+    src = cache_path(args.model, args.lookback)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / src.name
+    shutil.copyfile(src, path)
     pred = wide(path)
     pred = pred[pred.index > kb.TRAIN_END]
     tickers = list(pred.columns)
